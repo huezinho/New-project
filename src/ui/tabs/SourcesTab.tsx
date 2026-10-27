@@ -1,7 +1,9 @@
 /** Aba "Fontes de dados": de onde vêm os números e como atualizar. */
-import { Card, Notice } from '../components/common.tsx';
+import { useMemo, useState } from 'react';
+import { Card, Notice, ScoreBar } from '../components/common.tsx';
+import { eventNamePt } from '../eventNames.ts';
 import { useApp } from '../state.tsx';
-import { formatDate, formatNumber, relativeAge } from '../util.ts';
+import { formatDate, formatLooseDate, formatNumber, matchesQuery, relativeAge } from '../util.ts';
 
 const SOURCE_KIND_PT: Record<string, string> = {
   usage: 'Uso (ladder)',
@@ -10,11 +12,12 @@ const SOURCE_KIND_PT: Record<string, string> = {
   seed: 'Semente (pesquisa)',
 };
 
+const pctPt = (v: number) => `${(v * 100).toFixed(1).replace('.', ',')}%`;
+
 export function SourcesTab() {
   const { data } = useApp();
   const { dex, meta, heuristics } = data;
   const commitUrl = dex.source?.commit && dex.source.repo ? `https://github.com/${dex.source.repo}/commit/${dex.source.commit}` : null;
-  const totalWeight = meta.sources.reduce((a, s) => a + (s.weight || 0), 0) || 1;
   return (
     <div className="sources">
       <div className="two-col">
@@ -78,8 +81,8 @@ export function SourcesTab() {
             <div>
               <dt>Cobertura</dt>
               <dd>
-                {formatNumber(Object.keys(meta.pokemon).length)} Pokémon · {formatNumber(meta.cores.length)} cores · {formatNumber(meta.events.length)}{' '}
-                torneios
+                {formatNumber(Object.keys(meta.pokemon).length)} Pokémon · {formatNumber(meta.cores.length)} cores · {formatNumber(meta.archetypes.length)}{' '}
+                arquétipos · {formatNumber(meta.events.length)} torneios
               </dd>
             </div>
             <div>
@@ -96,58 +99,8 @@ export function SourcesTab() {
         </Card>
       </div>
 
-      <Card title="Fontes usadas no meta">
-        {meta.sources.length === 0 ? (
-          <Notice kind="info">Nenhuma fonte de uso foi agregada ainda. Rode <code>npm run update-data</code>.</Notice>
-        ) : (
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th scope="col">Fonte</th>
-                  <th scope="col">Tipo</th>
-                  <th scope="col">Regulação</th>
-                  <th scope="col">Período</th>
-                  <th scope="col" className="num">Amostras</th>
-                  <th scope="col" className="num">Peso</th>
-                </tr>
-              </thead>
-              <tbody>
-                {meta.sources.map(s => (
-                  <tr key={`${s.id}-${s.period ?? ''}`}>
-                    <td>
-                      {s.url ? (
-                        <a href={s.url} target="_blank" rel="noreferrer noopener">
-                          {s.label}
-                        </a>
-                      ) : (
-                        s.label
-                      )}
-                    </td>
-                    <td>{SOURCE_KIND_PT[s.kind] ?? s.kind}</td>
-                    <td>Reg {s.regulation}</td>
-                    <td className="small">{s.period ?? '—'}</td>
-                    <td className="num">{formatNumber(s.samples)}</td>
-                    <td className="num" title={`peso bruto ${s.weight.toFixed(3)}`}>
-                      {((s.weight / totalWeight) * 100).toFixed(1).replace('.', ',')}%
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-        {meta.notes.length > 0 && (
-          <>
-            <h3>Observações do agregador</h3>
-            <ul className="notes">
-              {meta.notes.map((n, i) => (
-                <li key={i}>{n}</li>
-              ))}
-            </ul>
-          </>
-        )}
-      </Card>
+      <MetaSources />
+      <CuratedFiles />
 
       <Card title="Como os dados são ponderados">
         <ul className="notes">
@@ -181,5 +134,185 @@ export function SourcesTab() {
         </ol>
       </Card>
     </div>
+  );
+}
+
+function MetaSources() {
+  const { data } = useApp();
+  const { meta } = data;
+  const [kind, setKind] = useState('');
+  const [query, setQuery] = useState('');
+  const [limit, setLimit] = useState(15);
+  const totalWeight = meta.sources.reduce((a, s) => a + (s.weight || 0), 0) || 1;
+  const kinds = useMemo(() => {
+    const m = new Map<string, { kind: string; count: number; samples: number; weight: number }>();
+    for (const s of meta.sources) {
+      const k = m.get(s.kind) ?? { kind: s.kind, count: 0, samples: 0, weight: 0 };
+      k.count++;
+      k.samples += s.samples || 0;
+      k.weight += s.weight || 0;
+      m.set(s.kind, k);
+    }
+    return [...m.values()].sort((a, b) => b.weight - a.weight);
+  }, [meta.sources]);
+  const rows = useMemo(
+    () =>
+      meta.sources
+        .filter(s => (!kind || s.kind === kind) && matchesQuery(query, s.label, s.period, s.regulation))
+        .sort((a, b) => (b.weight || 0) - (a.weight || 0)),
+    [meta.sources, kind, query],
+  );
+  return (
+    <Card title="Fontes usadas no meta" actions={<span className="muted small">{formatNumber(meta.sources.length)} fontes</span>}>
+      {meta.sources.length === 0 ? (
+        <Notice kind="info">
+          Nenhuma fonte de uso foi agregada ainda. Rode <code>npm run update-data</code>.
+        </Notice>
+      ) : (
+        <>
+          <ul className="kind-tiles">
+            {kinds.map(k => (
+              <li key={k.kind}>
+                <span className="kind-name">{SOURCE_KIND_PT[k.kind] ?? k.kind}</span>
+                <strong className="kind-value">{formatNumber(k.count)}</strong>
+                <span className="small muted">
+                  {formatNumber(k.samples)} amostras · {pctPt(k.weight / totalWeight)} do peso
+                </span>
+                <ScoreBar value={k.weight / totalWeight} tone="good" label={`${pctPt(k.weight / totalWeight)} do peso total`} />
+              </li>
+            ))}
+          </ul>
+          <div className="filters">
+            <label className="field">
+              <span className="field-label">Buscar fonte</span>
+              <input className="input" type="search" value={query} placeholder="Nome do torneio, período…" onChange={e => setQuery(e.target.value)} />
+            </label>
+            {kinds.length > 1 && (
+              <label className="field">
+                <span className="field-label">Tipo</span>
+                <select className="input" value={kind} onChange={e => setKind(e.target.value)}>
+                  <option value="">Todos</option>
+                  {kinds.map(k => (
+                    <option key={k.kind} value={k.kind}>
+                      {SOURCE_KIND_PT[k.kind] ?? k.kind}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+          </div>
+          <div className="table-wrap">
+            <table className="data-table stack">
+              <thead>
+                <tr>
+                  <th scope="col">Fonte</th>
+                  <th scope="col">Tipo</th>
+                  <th scope="col">Regulação</th>
+                  <th scope="col">Período</th>
+                  <th scope="col" className="num">
+                    Amostras
+                  </th>
+                  <th scope="col" className="num">
+                    Peso
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.slice(0, limit).map(s => (
+                  <tr key={`${s.id}-${s.period ?? ''}`}>
+                    <td className="stack-title" title={s.label}>
+                      {s.url ? (
+                        <a href={s.url} target="_blank" rel="noreferrer noopener">
+                          {eventNamePt(s.label)}
+                        </a>
+                      ) : (
+                        eventNamePt(s.label)
+                      )}
+                    </td>
+                    <td data-label="Tipo">{SOURCE_KIND_PT[s.kind] ?? s.kind}</td>
+                    <td data-label="Regulação">Reg {s.regulation}</td>
+                    <td className="small" data-label="Período">
+                      {formatLooseDate(s.period)}
+                    </td>
+                    <td className="num" data-label="Amostras">
+                      {formatNumber(s.samples)}
+                    </td>
+                    <td className="num" data-label="Peso" title={`peso bruto ${(s.weight ?? 0).toFixed(3)}`}>
+                      {pctPt((s.weight || 0) / totalWeight)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {rows.length === 0 && <p className="muted small">Nenhuma fonte com esse filtro.</p>}
+          {rows.length > limit && (
+            <button type="button" className="btn btn-block" onClick={() => setLimit(rows.length)}>
+              Mostrar todas ({rows.length})
+            </button>
+          )}
+        </>
+      )}
+      {meta.notes.length > 0 && (
+        <>
+          <h3>Observações do agregador</h3>
+          <ul className="notes">
+            {meta.notes.map((n, i) => (
+              <li key={i}>{n}</li>
+            ))}
+          </ul>
+        </>
+      )}
+    </Card>
+  );
+}
+
+function CuratedFiles() {
+  const { data } = useApp();
+  const { patches, regulations } = data;
+  return (
+    <Card title="Pesquisa curada (patches e regulações)">
+      <dl className="kv">
+        <div>
+          <dt>patches.json</dt>
+          <dd>
+            {patches ? (
+              <>
+                {patches.versions.length} versões do jogo · {patches.championsVsSV.length} diferenças Champions × SV ·{' '}
+                {patches.simulatorFixes.length} correções do simulador
+                {patches.meta?.generatedAt ? ` · pesquisado em ${formatLooseDate(patches.meta.generatedAt)}` : ''}
+                {patches.meta?.showdownCommit ? (
+                  <>
+                    {' '}
+                    · Showdown <code>{patches.meta.showdownCommit}</code>
+                  </>
+                ) : null}
+              </>
+            ) : (
+              <span className="muted">não encontrado (opcional)</span>
+            )}
+          </dd>
+        </div>
+        <div>
+          <dt>regulations.json</dt>
+          <dd>
+            {regulations ? (
+              <>
+                Reg {regulations.currentRegulation ?? '—'} atual · {regulations.regulations.length} regulações · {regulations.season2027.length} eventos da
+                temporada 2027 · {regulations.itemsAvailability.length} itens verificados
+                {regulations.generatedAt ? ` · pesquisado em ${formatLooseDate(regulations.generatedAt)}` : ''}
+              </>
+            ) : (
+              <span className="muted">não encontrado (opcional)</span>
+            )}
+          </dd>
+        </div>
+      </dl>
+      {patches?.meta?.notePt && <p className="small muted">{patches.meta.notePt}</p>}
+      <p className="small muted">
+        Estes arquivos são pesquisa manual (notas oficiais, Showdown, sites da comunidade) e complementam os dados automáticos. Datas e eventos
+        futuros podem mudar: confira sempre o site oficial do Play! Pokémon.
+      </p>
+    </Card>
   );
 }

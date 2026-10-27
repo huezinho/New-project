@@ -4,6 +4,7 @@ import type { DataChange } from '../../core/types.ts';
 import { Card, Notice, ScoreBar } from '../components/common.tsx';
 import type { ItemAvailability, PatchChange, PatchVersion, RegulationInfo, SeasonEvent } from '../data.ts';
 import { useApp } from '../state.tsx';
+import { eventNamePt, locationPt } from '../eventNames.ts';
 import { formatDate, formatLooseDate, looseDateRange, matchesQuery } from '../util.ts';
 
 const DIRECTIONS = ['buff', 'nerf', 'change'] as const;
@@ -34,36 +35,6 @@ const CLAUSE_PT: [RegExp, string, string][] = [
   [/nickname/i, 'Nickname Clause', 'Só no Showdown: apelidos não podem se repetir.'],
   [/banlist/i, 'Sem banlist extra', 'O VGC usa só as Flat Rules; banimentos de OU/UU do Showdown valem apenas para singles.'],
 ];
-
-const COUNTRY_PT: Record<string, string> = {
-  USA: 'EUA', Germany: 'Alemanha', France: 'França', Brazil: 'Brasil', Mexico: 'México', Poland: 'Polônia', Australia: 'Austrália',
-  UK: 'Reino Unido', 'New Zealand': 'Nova Zelândia', Canada: 'Canadá', Czechia: 'Tchéquia', Netherlands: 'Países Baixos', Italy: 'Itália',
-  Singapore: 'Singapura', Peru: 'Peru', Chile: 'Chile', Argentina: 'Argentina', Portugal: 'Portugal',
-};
-
-const REGION_PT: Record<string, string> = { 'Latin America': 'da América Latina', Europe: 'da Europa', 'North America': 'da América do Norte', Oceania: 'da Oceania' };
-
-/** "Baltimore Regional Championships" -> "Regional de Baltimore" etc. (nomes oficiais em inglês). */
-function eventNamePt(name: string | undefined): string {
-  if (!name) return '—';
-  let m = /^(.+?) Regional Championships$/.exec(name);
-  if (m) return `Regional de ${m[1]}`;
-  m = /^(.+?) International Championships(.*)$/.exec(name);
-  if (m) return `Internacional ${REGION_PT[m[1]] ?? `de ${m[1]}`}${m[2]}`;
-  m = /^(\d{4}) Pokémon World Championships$/.exec(name);
-  if (m) return `Mundial Pokémon ${m[1]}`;
-  m = /^(.+?) Special Championships$/.exec(name);
-  if (m) return `Special Championship de ${m[1]}`;
-  m = /^(.+?) Special Event$/.exec(name);
-  if (m) return `Evento especial de ${m[1]}`;
-  return name.replace(/\(online, in-game( ladder)?\)/, '(online, no jogo)').replace(/\(online\)/, '(online)');
-}
-
-function locationPt(loc: string | undefined): string {
-  if (!loc) return '—';
-  if (/^online/i.test(loc)) return 'Online (no jogo)';
-  return loc.replace(/, ([A-Za-z ]+)$/, (_, c: string) => `, ${COUNTRY_PT[c] ?? c}`);
-}
 
 function regulationLabel(reg: string | undefined): string {
   if (!reg) return '—';
@@ -335,7 +306,7 @@ function Calendar() {
         </label>
       </div>
       <div className="table-wrap">
-        <table className="data-table calendar">
+        <table className="data-table calendar stack">
           <thead>
             <tr>
               <th scope="col">Data</th>
@@ -350,19 +321,21 @@ function Calendar() {
               const isNext = rows[nextIdx]?.e === e;
               return (
                 <tr key={`${e.event}-${e.date}`} className={`${status}${isNext ? ' row-on' : ''}`}>
-                  <td className="nowrap" title={e.date}>
+                  <td className="nowrap stack-sub" title={e.date}>
                     {formatLooseDate(e.date?.split(/ \(| or /)[0])}
                   </td>
-                  <td>
+                  <td className="stack-title">
                     <strong>{eventNamePt(e.event)}</strong>
                     {isNext && <span className="tag tag-mine">próximo evento</span>}
                   </td>
-                  <td>
+                  <td data-label="Local">
                     {locationPt(e.location)}
                     {br && <span className="tag tag-ok">Brasil</span>}
                   </td>
-                  <td className="nowrap">{regulationLabel(e.regulation)}</td>
-                  <td>
+                  <td className="nowrap" data-label="Regulação">
+                    {regulationLabel(e.regulation)}
+                  </td>
+                  <td data-label="Situação">
                     <span className={`status status-${status}`}>{STATUS_PT[status]}</span>
                   </td>
                 </tr>

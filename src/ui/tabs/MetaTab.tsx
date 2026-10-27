@@ -6,6 +6,7 @@ import type { MetaPokemon, TournamentEvent, TournamentTeam, TypeName } from '../
 import { Card, EmptyState, Notice } from '../components/common.tsx';
 import { Sprite } from '../components/Sprite.tsx';
 import { TypeList } from '../components/TypeBadge.tsx';
+import { eventNamePt } from '../eventNames.ts';
 import { useApp } from '../state.tsx';
 import { formatDate, formatNumber, MAX_TEAM, matchesQuery, normalizeSet, tournamentMemberToSet } from '../util.ts';
 
@@ -69,6 +70,7 @@ export function MetaTab() {
 }
 
 type SortKey = 'rank' | 'name' | 'usage' | 'winRate' | 'topCut' | 'trend';
+const SORT_PT: Record<SortKey, string> = { rank: 'Posição', usage: 'Uso', winRate: 'Vitória', topCut: 'Top cut', trend: 'Tendência', name: 'Nome' };
 
 const trendDelta = (p: MetaPokemon) => (p.trend ? p.trend.recent - p.trend.previous : 0);
 
@@ -141,6 +143,23 @@ function UsageTable() {
           <span className="field-label">Buscar</span>
           <input className="input" type="search" value={query} placeholder="Nome ou tipo…" onChange={e => setQuery(e.target.value)} />
         </label>
+        <label className="field only-mobile">
+          <span className="field-label">Ordenar por</span>
+          <select
+            className="input"
+            value={sort.key}
+            onChange={e => {
+              const key = e.target.value as SortKey;
+              setSort({ key, dir: key === 'rank' || key === 'name' ? 1 : -1 });
+            }}
+          >
+            {(Object.keys(SORT_PT) as SortKey[]).map(k => (
+              <option key={k} value={k}>
+                {SORT_PT[k]}
+              </option>
+            ))}
+          </select>
+        </label>
         <label className="field">
           <span className="field-label">Tipo</span>
           <select className="input" value={type} onChange={e => setType(e.target.value as TypeName | '')}>
@@ -176,8 +195,8 @@ function UsageTable() {
               const inTeam = teamNums.has(sp?.num);
               return (
                 <tr key={p.id}>
-                  <td className="num muted">{p.rank}</td>
-                  <td>
+                  <td className="num muted c-rank">{p.rank}</td>
+                  <td className="c-poke">
                     <span className="poke-cell">
                       <Sprite species={sp} name={p.name} size={32} />
                       <span>
@@ -186,32 +205,34 @@ function UsageTable() {
                       </span>
                     </span>
                   </td>
-                  <td className="num">
+                  <td className="num c-usage" data-label="Uso">
                     <strong>{pct(p.usage)}</strong>
                   </td>
-                  <td className="num">
+                  <td className="num c-win" data-label="Vitória">
                     {pct(p.winRate)}
                     <span className="small muted block">{p.games ? `${formatNumber(p.games)} jogos` : ''}</span>
                   </td>
-                  <td className="num">{pct(p.topCutRate)}</td>
-                  <td>
+                  <td className="num c-top" data-label="Top cut">
+                    {pct(p.topCutRate)}
+                  </td>
+                  <td className="c-trend" data-label="Tendência">
                     <Trend p={p} />
                   </td>
-                  <td className="small">
+                  <td className="small c-items" data-label="Itens">
                     {p.items.slice(0, 2).map(i => (
                       <span key={i.id} className="block">
                         {i.name} <span className="muted">{pct(i.share, 0)}</span>
                       </span>
                     ))}
                   </td>
-                  <td className="small">
+                  <td className="small c-moves" data-label="Golpes">
                     {p.moves.slice(0, 4).map(m => (
                       <span key={m.id} className="block">
                         {m.name} <span className="muted">{pct(m.share, 0)}</span>
                       </span>
                     ))}
                   </td>
-                  <td>
+                  <td className="c-act">
                     <button
                       type="button"
                       className="btn btn-sm"
@@ -294,8 +315,18 @@ function Archetypes() {
   if (!data.meta.archetypes.length) return <p className="muted">Sem arquétipos registrados nos dados de meta.</p>;
   return (
     <div className="arch-grid">
-      {data.meta.archetypes.map(a => (
-        <Card key={a.id} title={a.namePt || a.name} actions={a.share ? <span className="usage">{pct(a.share)}</span> : null}>
+      {[...data.meta.archetypes].sort((a, b) => (b.share ?? 0) - (a.share ?? 0)).map(a => (
+        <Card
+          key={a.id}
+          title={a.namePt || a.name}
+          actions={
+            <span className="small muted arch-stats">
+              {a.share ? <span className="usage">uso {pct(a.share)}</span> : null}
+              {a.winRate !== null && a.winRate !== undefined ? <span>vitória {pct(a.winRate)}</span> : null}
+              {a.games ? <span>{formatNumber(a.games)} jogos</span> : null}
+            </span>
+          }
+        >
           <div className="core-members">
             {a.keyMembers.map(m => (
               <Sprite key={m} species={dex.species(m)} name={m} size={40} />
@@ -315,17 +346,39 @@ const TIER_PT: Record<string, string> = {
 
 function Events() {
   const { data } = useApp();
-  const regs = [...new Set(data.meta.events.map(e => e.regulation))];
+  const regs = [...new Set(data.meta.events.map(e => e.regulation))].sort().reverse();
+  const tiers = [...new Set(data.meta.events.map(e => e.tier))];
   const [reg, setReg] = useState('');
+  const [tier, setTier] = useState('');
   const [query, setQuery] = useState('');
-  const events = data.meta.events.filter(e => (!reg || e.regulation === reg) && matchesQuery(query, e.name, e.game));
+  const [limit, setLimit] = useState(15);
+  const events = useMemo(
+    () =>
+      data.meta.events
+        .filter(e => (!reg || e.regulation === reg) && (!tier || e.tier === tier) && matchesQuery(query, e.name, e.game, ...e.teams.map(t => t.player)))
+        .sort((a, b) => (b.date ?? '').localeCompare(a.date ?? '')),
+    [data.meta.events, reg, tier, query],
+  );
   return (
-    <Card title="Torneios recentes">
+    <Card title="Torneios recentes" actions={<span className="muted small">{data.meta.events.length} torneios com times publicados</span>}>
       <div className="filters">
         <label className="field">
           <span className="field-label">Buscar</span>
-          <input className="input" type="search" value={query} placeholder="Nome do torneio…" onChange={e => setQuery(e.target.value)} />
+          <input className="input" type="search" value={query} placeholder="Torneio ou jogador…" onChange={e => setQuery(e.target.value)} />
         </label>
+        {tiers.length > 1 && (
+          <label className="field">
+            <span className="field-label">Categoria</span>
+            <select className="input" value={tier} onChange={e => setTier(e.target.value)}>
+              <option value="">Todas</option>
+              {tiers.map(t => (
+                <option key={t} value={t}>
+                  {TIER_PT[t] ?? t}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         {regs.length > 1 && (
           <label className="field">
             <span className="field-label">Regulação</span>
@@ -344,10 +397,15 @@ function Events() {
         <p className="muted">Nenhum torneio encontrado.</p>
       ) : (
         <ul className="events">
-          {events.map(e => (
+          {events.slice(0, limit).map(e => (
             <EventItem key={e.id} event={e} />
           ))}
         </ul>
+      )}
+      {events.length > limit && (
+        <button type="button" className="btn btn-block" onClick={() => setLimit(l => l + 15)}>
+          Mostrar mais ({events.length - limit} restantes)
+        </button>
       )}
     </Card>
   );
@@ -358,16 +416,23 @@ function EventItem({ event }: { event: TournamentEvent }) {
     <li className="event">
       <details>
         <summary>
-          <span className="event-name">{event.name}</span>
+          <span className="event-name" title={event.name}>
+            {eventNamePt(event.name)}
+          </span>
           <span className="event-meta small">
             <span>{formatDate(event.date)}</span>
             <span className="tag">Reg {event.regulation}</span>
-            {event.game && event.game !== 'Champions' && <span className="tag tag-warn">{event.game}</span>}
+            {event.game && event.game !== 'Champions' && <span className="tag tag-warn">{event.game === 'SV' ? 'Scarlet/Violet' : event.game}</span>}
             <span className="tag">{TIER_PT[event.tier] ?? event.tier}</span>
             {event.players ? <span>{formatNumber(event.players)} jogadores</span> : null}
             <span className="muted">{event.teams.length} times</span>
           </span>
         </summary>
+        {event.game && event.game !== 'Champions' && (
+          <p className="small muted">
+            Torneio da era Scarlet/Violet: conta pouco no meta e alguns Pokémon, itens ou golpes não existem no Champions (são marcados ao importar).
+          </p>
+        )}
         {event.url && (
           <p className="small">
             <a href={event.url} target="_blank" rel="noreferrer noopener">
@@ -390,7 +455,7 @@ function EventTeam({ team, event }: { team: TournamentTeam; event: TournamentEve
   const [done, setDone] = useState(false);
   const importTeam = () => {
     const sets = team.pokemon.slice(0, MAX_TEAM).map(m => normalizeSet(dex, tournamentMemberToSet(m)).set);
-    createTeam(`${team.player} — ${event.name}`.slice(0, 60), sets);
+    createTeam(`${team.player} — ${eventNamePt(event.name)}`.slice(0, 60), sets);
     setDone(true);
     goTab('equipe');
   };
