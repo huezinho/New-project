@@ -1,0 +1,412 @@
+{
+  "version": 1,
+  "roles": [
+    {
+      "id": "speedcontrol",
+      "namePt": "Controle de velocidade",
+      "description": "Muda a ordem dos turnos a favor da equipe (Tailwind, Trick Room, Icy Wind, Electroweb, Thunder Wave...). É o papel mais importante em VGC: quem age primeiro decide as trocas de dano.",
+      "moves": ["tailwind", "trickroom", "icywind", "electroweb", "thunderwave", "nuzzle", "glare", "scaryface", "bulldoze", "rocktomb", "lowsweep", "mudshot", "drumbeating", "stringshot", "cottonspore", "quash", "afteryou", "toxicthread", "pounce", "syrupbomb"],
+      "abilities": [],
+      "items": [],
+      "weight": 1,
+      "quality": {
+        "tailwind": 1, "trickroom": 1, "icywind": 0.8, "electroweb": 0.8, "thunderwave": 0.6, "nuzzle": 0.45, "glare": 0.6,
+        "scaryface": 0.45, "bulldoze": 0.45, "rocktomb": 0.4, "lowsweep": 0.35, "mudshot": 0.35, "drumbeating": 0.45,
+        "stringshot": 0.3, "cottonspore": 0.4, "quash": 0.35, "afteryou": 0.35, "toxicthread": 0.4, "pounce": 0.3, "syrupbomb": 0.35
+      }
+    },
+    {
+      "id": "fakeout",
+      "namePt": "Fake Out",
+      "description": "Faz o alvo hesitar no primeiro turno em campo: abre espaço para Tailwind/Trick Room, setup ou dano livre.",
+      "moves": ["fakeout"],
+      "abilities": [],
+      "items": [],
+      "weight": 0.75
+    },
+    {
+      "id": "intimidate",
+      "namePt": "Intimidate / redução de ataque",
+      "description": "Reduz o dano que a equipe recebe: Intimidate, Parting Shot, Snarl, Noble Roar, Charm e golpes que baixam Ataque/At. Esp.",
+      "moves": ["partingshot", "snarl", "nobleroar", "charm", "featherdance", "tickle", "bittermalice", "chillingwater", "lunge", "breakingswipe", "babydolleyes", "eerieimpulse", "strugglebug", "mysticalfire", "spiritbreak", "skittersmack", "tropkick", "memento"],
+      "abilities": ["intimidate"],
+      "items": [],
+      "weight": 0.6,
+      "quality": {
+        "intimidate": 1, "partingshot": 0.75, "snarl": 0.7, "nobleroar": 0.5, "charm": 0.45, "featherdance": 0.45, "tickle": 0.3,
+        "bittermalice": 0.4, "chillingwater": 0.4, "lunge": 0.4, "breakingswipe": 0.6, "babydolleyes": 0.35, "eerieimpulse": 0.3,
+        "strugglebug": 0.45, "mysticalfire": 0.35, "spiritbreak": 0.35, "skittersmack": 0.35, "tropkick": 0.35, "memento": 0.3
+      }
+    },
+    {
+      "id": "redirection",
+      "namePt": "Redirecionamento",
+      "description": "Atrai os golpes de alvo único para si (Follow Me, Rage Powder), protegendo o parceiro que monta setup ou usa Trick Room. Lightning Rod redireciona apenas golpes Elétricos.",
+      "moves": ["followme", "ragepowder"],
+      "abilities": ["lightningrod"],
+      "items": [],
+      "weight": 0.5,
+      "quality": { "followme": 1, "ragepowder": 0.95, "lightningrod": 0.3 }
+    },
+    {
+      "id": "spread",
+      "namePt": "Ataques em área",
+      "description": "Golpes que acertam os dois oponentes (dano ×0,75 em cada): pressionam os dois lados do campo e furam Protect parcial.",
+      "moves": ["aircutter", "blizzard", "burningjealousy", "clangingscales", "dazzlinggleam", "eruption", "heatwave", "hypervoice", "makeitrain", "matchagotcha", "muddywater", "overdrive", "rockslide", "waterspout", "boomburst", "brutalswing", "discharge", "earthquake", "lavaplume", "paraboliccharge", "petalblizzard", "sludgewave", "sparklingaria", "surf", "icywind", "electroweb", "snarl", "strugglebug", "breakingswipe", "mortalspin", "bulldoze", "explosion", "selfdestruct", "mistyexplosion"],
+      "abilities": [],
+      "items": [],
+      "weight": 0.45,
+      "quality": {
+        "icywind": 0.35, "electroweb": 0.35, "snarl": 0.35, "strugglebug": 0.35, "breakingswipe": 0.4, "mortalspin": 0.35,
+        "bulldoze": 0.35, "explosion": 0.4, "selfdestruct": 0.35, "mistyexplosion": 0.35, "brutalswing": 0.5, "aircutter": 0.6
+      }
+    },
+    {
+      "id": "disruption",
+      "namePt": "Disrupção",
+      "description": "Atrapalha o plano do oponente: Taunt, Encore, sono, queimadura, Haze, Imprison, troca forçada, remoção de item...",
+      "moves": ["taunt", "encore", "sleeppowder", "yawn", "willowisp", "haze", "clearsmog", "imprison", "disable", "hypnosis", "sing", "soak", "skillswap", "entrainment", "simplebeam", "worryseed", "gastroacid", "roar", "whirlwind", "dragontail", "circlethrow", "knockoff", "trick", "switcheroo", "spite", "torment", "confuseray", "stunspore", "toxic", "poisonpowder", "magicpowder", "perishsong"],
+      "abilities": [],
+      "items": [],
+      "weight": 0.4,
+      "quality": {
+        "taunt": 0.8, "encore": 0.8, "sleeppowder": 0.85, "yawn": 0.5, "willowisp": 0.7, "haze": 0.45, "clearsmog": 0.45, "imprison": 0.4,
+        "disable": 0.4, "hypnosis": 0.5, "sing": 0.4, "soak": 0.3, "skillswap": 0.4, "entrainment": 0.3, "simplebeam": 0.3, "worryseed": 0.3,
+        "gastroacid": 0.35, "roar": 0.3, "whirlwind": 0.3, "dragontail": 0.35, "circlethrow": 0.35, "knockoff": 0.5, "trick": 0.35,
+        "switcheroo": 0.35, "spite": 0.2, "torment": 0.2, "confuseray": 0.35, "stunspore": 0.5, "toxic": 0.25, "poisonpowder": 0.2,
+        "magicpowder": 0.2, "perishsong": 0.4
+      }
+    },
+    {
+      "id": "support",
+      "namePt": "Suporte",
+      "description": "Ajuda o parceiro a ganhar trocas: Helping Hand, Ally Switch, Coaching, Pollen Puff, Life Dew, Heal Pulse, Decorate, After You, Instruct...",
+      "moves": ["helpinghand", "allyswitch", "coaching", "pollenpuff", "lifedew", "healpulse", "decorate", "afteryou", "instruct", "dragoncheer", "aromaticmist", "howl", "healingwish", "wish"],
+      "abilities": ["friendguard", "hospitality", "healer"],
+      "items": [],
+      "weight": 0.35,
+      "quality": {
+        "helpinghand": 0.9, "allyswitch": 0.7, "coaching": 0.6, "pollenpuff": 0.6, "lifedew": 0.4, "healpulse": 0.5, "decorate": 0.6,
+        "afteryou": 0.5, "instruct": 0.5, "dragoncheer": 0.4, "aromaticmist": 0.3, "howl": 0.4, "healingwish": 0.4, "wish": 0.3,
+        "friendguard": 0.6, "hospitality": 0.5, "healer": 0.3
+      }
+    },
+    {
+      "id": "pivot",
+      "namePt": "Pivô (troca com vantagem)",
+      "description": "Sai de campo causando dano ou debuff e traz um parceiro com segurança: U-turn, Volt Switch, Flip Turn, Parting Shot, Shed Tail.",
+      "moves": ["uturn", "voltswitch", "flipturn", "partingshot", "shedtail", "chillyreception", "batonpass"],
+      "abilities": ["emergencyexit"],
+      "items": ["ejectbutton"],
+      "weight": 0.3,
+      "quality": { "uturn": 0.8, "voltswitch": 0.8, "flipturn": 0.8, "partingshot": 1, "shedtail": 0.6, "chillyreception": 0.6, "batonpass": 0.4, "emergencyexit": 0.3, "ejectbutton": 0.5 }
+    },
+    {
+      "id": "priority",
+      "namePt": "Prioridade",
+      "description": "Golpes que agem antes da ordem normal de velocidade: finalizam alvos rápidos e ignoram Tailwind adversário.",
+      "moves": ["extremespeed", "suckerpunch", "aquajet", "bulletpunch", "iceshard", "machpunch", "shadowsneak", "vacuumwave", "jetpunch", "accelerock", "firstimpression", "upperhand", "watershuriken", "grassyglide", "quickattack"],
+      "abilities": ["prankster", "galewings"],
+      "items": [],
+      "weight": 0.3,
+      "quality": {
+        "extremespeed": 1, "suckerpunch": 0.9, "aquajet": 0.7, "bulletpunch": 0.7, "iceshard": 0.6, "machpunch": 0.6, "shadowsneak": 0.6,
+        "vacuumwave": 0.6, "jetpunch": 0.8, "accelerock": 0.6, "firstimpression": 0.8, "upperhand": 0.6, "watershuriken": 0.5,
+        "grassyglide": 0.7, "quickattack": 0.4, "prankster": 0.6, "galewings": 0.4
+      }
+    },
+    {
+      "id": "teamprotect",
+      "namePt": "Proteção da dupla",
+      "description": "Protege os dois Pokémon em campo: Wide Guard (ataques em área) e Quick Guard (prioridade, incluindo Fake Out). Armor Tail e Queenly Majesty bloqueiam prioridade.",
+      "moves": ["wideguard", "quickguard"],
+      "abilities": ["armortail", "queenlymajesty"],
+      "items": [],
+      "weight": 0.25,
+      "quality": { "wideguard": 1, "quickguard": 0.6, "armortail": 0.5, "queenlymajesty": 0.5 }
+    },
+    {
+      "id": "screens",
+      "namePt": "Telas",
+      "description": "Reflect, Light Screen e Aurora Veil reduzem o dano recebido pela dupla por 5 turnos (8 com Light Clay).",
+      "moves": ["reflect", "lightscreen", "auroraveil"],
+      "abilities": [],
+      "items": [],
+      "weight": 0.25,
+      "quality": { "reflect": 0.8, "lightscreen": 0.8, "auroraveil": 1 }
+    },
+    {
+      "id": "setup",
+      "namePt": "Setup",
+      "description": "Golpes que aumentam atributos e transformam um Pokémon em condição de vitória (Swords Dance, Nasty Plot, Dragon Dance, Calm Mind...). Funcionam melhor com Fake Out ou redirecionamento.",
+      "moves": ["swordsdance", "nastyplot", "dragondance", "calmmind", "bulkup", "quiverdance", "bellydrum", "shellsmash", "coil", "irondefense", "cosmicpower", "agility", "rockpolish", "shiftgear", "noretreat", "clangoroussoul", "tidyup", "growth", "curse", "acupressure", "cottonguard", "acidarmor", "amnesia", "focusenergy"],
+      "abilities": [],
+      "items": [],
+      "weight": 0.2,
+      "quality": {
+        "swordsdance": 1, "nastyplot": 1, "dragondance": 1, "calmmind": 0.8, "bulkup": 0.8, "quiverdance": 1, "bellydrum": 0.8,
+        "shellsmash": 1, "coil": 0.7, "irondefense": 0.5, "cosmicpower": 0.5, "agility": 0.5, "rockpolish": 0.5, "shiftgear": 0.8,
+        "noretreat": 0.8, "clangoroussoul": 0.9, "tidyup": 0.8, "growth": 0.6, "curse": 0.5, "acupressure": 0.4, "cottonguard": 0.4,
+        "acidarmor": 0.4, "amnesia": 0.4, "focusenergy": 0.2
+      }
+    },
+    {
+      "id": "antiintimidate",
+      "namePt": "Anti-Intimidate",
+      "description": "Habilidades que punem ou ignoram Intimidate (Defiant, Competitive, Guard Dog, Clear Body, Mirror Armor...). Valem mais quanto mais Intimidate houver no meta.",
+      "moves": [],
+      "abilities": ["defiant", "competitive", "guarddog", "clearbody", "mirrorarmor", "whitesmoke", "hypercutter", "innerfocus", "owntempo", "oblivious", "scrappy", "contrary"],
+      "items": ["whiteherb"],
+      "weight": 0.15,
+      "quality": {
+        "defiant": 1, "competitive": 0.8, "guarddog": 1, "clearbody": 0.7, "mirrorarmor": 0.9, "whitesmoke": 0.7, "hypercutter": 0.7,
+        "innerfocus": 0.6, "owntempo": 0.6, "oblivious": 0.6, "scrappy": 0.6, "contrary": 0.8, "whiteherb": 0.4
+      }
+    },
+    {
+      "id": "weather",
+      "namePt": "Clima",
+      "description": "Ativa sol, chuva, areia ou neve: Drought, Drizzle, Sand Stream, Snow Warning ou os golpes de clima.",
+      "moves": ["sunnyday", "raindance", "sandstorm", "snowscape", "chillyreception"],
+      "abilities": ["drought", "drizzle", "sandstream", "snowwarning"],
+      "items": [],
+      "weight": 0.12,
+      "quality": { "sunnyday": 0.6, "raindance": 0.6, "sandstorm": 0.6, "snowscape": 0.6, "chillyreception": 0.5 }
+    },
+    {
+      "id": "terrain",
+      "namePt": "Terreno",
+      "description": "Ativa Psychic, Grassy, Electric ou Misty Terrain (habilidades Surge ou golpes de terreno).",
+      "moves": ["psychicterrain", "grassyterrain", "electricterrain", "mistyterrain"],
+      "abilities": ["psychicsurge", "grassysurge", "electricsurge", "seedsower"],
+      "items": [],
+      "weight": 0.1,
+      "quality": { "psychicterrain": 0.55, "grassyterrain": 0.55, "electricterrain": 0.55, "mistyterrain": 0.55, "seedsower": 0.5 }
+    },
+    {
+      "id": "trapping",
+      "namePt": "Prender",
+      "description": "Impede a troca do oponente (Shadow Tag, Mean Look, Block, Fairy Lock): base do Perish Trap.",
+      "moves": ["meanlook", "block", "fairylock", "spiritshackle", "jawlock", "octolock"],
+      "abilities": ["shadowtag"],
+      "items": [],
+      "weight": 0.05,
+      "quality": { "spiritshackle": 0.6, "jawlock": 0.5, "octolock": 0.6 }
+    },
+    {
+      "id": "trickroomattacker",
+      "namePt": "Atacante de Trick Room",
+      "description": "Pokémon lento e forte que age primeiro sob Trick Room.",
+      "moves": [],
+      "abilities": [],
+      "items": [],
+      "weight": 0.05,
+      "traits": ["basespe<=60&attack>=100"]
+    },
+    {
+      "id": "protect",
+      "namePt": "Protect",
+      "description": "Protect/Detect e variantes: essencial em quase todos os membros para scouting, bloquear Fake Out e ataques focados.",
+      "moves": ["protect", "detect", "spikyshield", "banefulbunker", "kingsshield"],
+      "abilities": [],
+      "items": [],
+      "weight": 0.3,
+      "scope": "member"
+    }
+  ],
+  "archetypes": [
+    {
+      "id": "tailwind",
+      "namePt": "Tailwind",
+      "setters": { "moves": ["tailwind"], "abilities": [] },
+      "abusers": { "abilities": [], "traits": ["basespe>=55&attack>=95"] },
+      "speedProfile": "fast",
+      "antiSynergyMoves": ["trickroom"],
+      "description": "Dobra a velocidade da equipe por 4 turnos (contando o turno em que é usado). Favorece atacantes médios e fortes; use Fake Out ou Prankster para garantir o Tailwind."
+    },
+    {
+      "id": "trickroom",
+      "namePt": "Trick Room",
+      "setters": { "moves": ["trickroom"], "abilities": [] },
+      "abusers": { "abilities": [], "traits": ["basespe<=60&attack>=90", "!basespe>=100"] },
+      "speedProfile": "slow",
+      "antiSynergyMoves": ["tailwind", "icywind", "electroweb", "bulldoze", "rocktomb", "scaryface", "stringshot", "cottonspore", "agility", "rockpolish", "mudshot", "lowsweep", "drumbeating", "pounce", "toxicthread", "syrupbomb"],
+      "description": "Inverte a ordem de velocidade por 5 turnos: os mais lentos agem primeiro. Precisa de setter protegido (Fake Out, redirecionamento) e atacantes lentos e fortes, com 0 SP de Velocidade e natureza −Spe."
+    },
+    {
+      "id": "sun",
+      "namePt": "Sol",
+      "setters": { "moves": ["sunnyday"], "abilities": ["drought"] },
+      "abusers": { "abilities": ["chlorophyll", "solarpower", "harvest", "leafguard"], "traits": ["type:Fire&attack>=90", "move:weatherball", "move:solarbeam", "move:solarblade", "!type:Water&attack>=95"] },
+      "speedProfile": "mixed",
+      "antiSynergyMoves": ["raindance", "sandstorm", "snowscape", "chillyreception"],
+      "description": "Golpes de Fogo ×1,5 e de Água ×0,5; Chlorophyll dobra a velocidade e Solar Beam não precisa carregar. Setters: Drought (Torkoal, Mega Charizard Y). Mega Sol (Mega Meganium) age como se houvesse sol só para o próprio usuário, sem ativar o clima."
+    },
+    {
+      "id": "rain",
+      "namePt": "Chuva",
+      "setters": { "moves": ["raindance"], "abilities": ["drizzle"] },
+      "abusers": { "abilities": ["swiftswim", "raindish", "dryskin", "hydration"], "traits": ["type:Water&attack>=90", "move:thunder", "move:hurricane", "move:electroshot", "move:weatherball", "!type:Fire&attack>=95"] },
+      "speedProfile": "mixed",
+      "antiSynergyMoves": ["sunnyday", "sandstorm", "snowscape", "chillyreception"],
+      "description": "Golpes de Água ×1,5 e de Fogo ×0,5; Swift Swim dobra a velocidade, Thunder/Hurricane não erram e Electro Shot dispara no mesmo turno. Setter clássico: Pelipper (Drizzle)."
+    },
+    {
+      "id": "sand",
+      "namePt": "Areia",
+      "setters": { "moves": ["sandstorm"], "abilities": ["sandstream"] },
+      "abusers": { "abilities": ["sandrush", "sandforce", "sandveil"], "traits": ["type:Rock", "type:Ground&attack>=95", "type:Steel&attack>=95"] },
+      "speedProfile": "mixed",
+      "antiSynergyMoves": ["sunnyday", "raindance", "snowscape", "chillyreception"],
+      "description": "Pokémon de Pedra ganham Def. Esp. ×1,5; Sand Rush dobra a velocidade e Sand Force fortalece golpes de Pedra/Terrestre/Aço. Setters: Tyranitar e Hippowdon (Sand Stream)."
+    },
+    {
+      "id": "snow",
+      "namePt": "Neve",
+      "setters": { "moves": ["snowscape", "chillyreception"], "abilities": ["snowwarning"] },
+      "abusers": { "abilities": ["slushrush", "icebody", "snowcloak"], "traits": ["type:Ice", "move:auroraveil", "move:blizzard"] },
+      "speedProfile": "mixed",
+      "antiSynergyMoves": ["sunnyday", "raindance", "sandstorm"],
+      "description": "Pokémon de Gelo ganham Defesa ×1,5, Blizzard não erra e Aurora Veil fica disponível. Setters: Abomasnow, Mega Abomasnow e Mega Froslass (Snow Warning)."
+    },
+    {
+      "id": "psychicterrain",
+      "namePt": "Psychic Terrain",
+      "setters": { "moves": ["psychicterrain"], "abilities": ["psychicsurge"] },
+      "abusers": { "abilities": [], "traits": ["move:expandingforce", "type:Psychic&attack>=95"] },
+      "speedProfile": "mixed",
+      "antiSynergyMoves": ["electricterrain", "grassyterrain", "mistyterrain", "fakeout"],
+      "description": "Golpes Psíquicos ×1,3 para quem está no chão, Expanding Force vira ataque em área e prioridade contra alvos no chão é bloqueada (inclusive o seu Fake Out). Setter: Indeedee (Psychic Surge)."
+    },
+    {
+      "id": "grassyterrain",
+      "namePt": "Grassy Terrain",
+      "setters": { "moves": ["grassyterrain"], "abilities": ["grassysurge", "seedsower"] },
+      "abusers": { "abilities": ["grasspelt"], "traits": ["move:grassyglide", "type:Grass&attack>=90"] },
+      "speedProfile": "mixed",
+      "antiSynergyMoves": ["electricterrain", "psychicterrain", "mistyterrain", "earthquake", "bulldoze"],
+      "description": "Golpes de Planta ×1,3, cura 1/16 por turno, Grassy Glide ganha prioridade e Earthquake/Bulldoze causam metade do dano. Setter: Rillaboom (Grassy Surge)."
+    },
+    {
+      "id": "electricterrain",
+      "namePt": "Electric Terrain",
+      "setters": { "moves": ["electricterrain"], "abilities": ["electricsurge"] },
+      "abusers": { "abilities": ["surgesurfer"], "traits": ["move:risingvoltage", "move:terrainpulse", "type:Electric&attack>=90"] },
+      "speedProfile": "mixed",
+      "antiSynergyMoves": ["psychicterrain", "grassyterrain", "mistyterrain"],
+      "description": "Golpes Elétricos ×1,3, impede sono de quem está no chão e Rising Voltage dobra de poder. Setter: Mega Raichu X (Electric Surge)."
+    },
+    {
+      "id": "perishtrap",
+      "namePt": "Perish Trap",
+      "setters": { "moves": ["perishsong"], "abilities": [] },
+      "abusers": { "abilities": ["shadowtag"], "traits": ["move:meanlook", "move:block", "move:fairylock", "move:spiritshackle"] },
+      "speedProfile": "mixed",
+      "antiSynergyMoves": [],
+      "description": "Perish Song com quem impede a troca (Mega Gengar com Shadow Tag, Mean Look, Fairy Lock): o oponente perde os Pokémon presos em 3 turnos enquanto você usa Protect.",
+      "requires": { "moves": ["meanlook", "block", "fairylock", "spiritshackle", "jawlock", "octolock"], "abilities": ["shadowtag"] }
+    },
+    {
+      "id": "hyperoffense",
+      "namePt": "Hiper ofensiva",
+      "setters": { "moves": ["fakeout", "tailwind", "swordsdance", "nastyplot", "dragondance"], "abilities": ["prankster"] },
+      "abusers": { "abilities": [], "traits": ["basespe>=95&attack>=105"] },
+      "speedProfile": "fast",
+      "antiSynergyMoves": ["trickroom"],
+      "description": "Atacantes rápidos e fortes que pressionam desde o turno 1 com Fake Out, Focus Sash e setup; depende de velocidade natural ou Tailwind."
+    },
+    {
+      "id": "balance",
+      "namePt": "Balanceada (goodstuffs)",
+      "setters": { "moves": ["fakeout", "partingshot", "uturn", "followme", "ragepowder", "helpinghand"], "abilities": ["intimidate", "regenerator"] },
+      "abusers": { "abilities": [], "traits": ["bulk>=170"] },
+      "speedProfile": "mixed",
+      "antiSynergyMoves": [],
+      "description": "Núcleo flexível de Pokémon fortes individualmente, com Intimidate, Fake Out, pivôs e Pokémon resistentes; adapta-se ao oponente em vez de seguir um único modo."
+    }
+  ],
+  "abilityImmunities": [
+    { "ability": "levitate", "immuneTo": "Ground" },
+    { "ability": "eartheater", "immuneTo": "Ground", "bonus": "cura 25%" },
+    { "ability": "eelevate", "immuneTo": "Ground" },
+    { "ability": "flashfire", "immuneTo": "Fire", "bonus": "fortalece golpes de Fogo" },
+    { "ability": "waterabsorb", "immuneTo": "Water", "bonus": "cura 25%" },
+    { "ability": "dryskin", "immuneTo": "Water", "bonus": "cura 25%" },
+    { "ability": "voltabsorb", "immuneTo": "Electric", "bonus": "cura 25%" },
+    { "ability": "lightningrod", "immuneTo": "Electric", "bonus": "+1 At. Esp. e redireciona" },
+    { "ability": "motordrive", "immuneTo": "Electric", "bonus": "+1 Velocidade" },
+    { "ability": "sapsipper", "immuneTo": "Grass", "bonus": "+1 Ataque" }
+  ],
+  "pairSynergies": [
+    { "id": "redirect-setup", "descriptionPt": "Redirecionamento protege quem usa setup", "condition": "role:redirection+role:setup", "weight": 0.6 },
+    { "id": "fakeout-trickroom", "descriptionPt": "Fake Out ajuda a garantir o Trick Room", "condition": "role:fakeout+move:trickroom", "weight": 0.7 },
+    { "id": "redirect-trickroom", "descriptionPt": "Redirecionamento protege o setter de Trick Room", "condition": "role:redirection+move:trickroom", "weight": 0.6 },
+    { "id": "fakeout-tailwind", "descriptionPt": "Fake Out dá tempo para o Tailwind", "condition": "role:fakeout+move:tailwind", "weight": 0.5 },
+    { "id": "earthquake-immune", "descriptionPt": "Earthquake sem acertar o parceiro (imune a Terrestre)", "condition": "move:earthquake+immune:Ground", "weight": 0.6 },
+    { "id": "surf-immune", "descriptionPt": "Surf sem acertar o parceiro (imune a Água)", "condition": "move:surf+immune:Water", "weight": 0.4 },
+    { "id": "discharge-immune", "descriptionPt": "Discharge sem acertar o parceiro (imune a Elétrico)", "condition": "move:discharge+immune:Electric", "weight": 0.4 },
+    { "id": "helpinghand-spread", "descriptionPt": "Helping Hand fortalece ataques em área", "condition": "move:helpinghand+role:spread", "weight": 0.35 },
+    { "id": "screens-setup", "descriptionPt": "Telas dão tempo para o setup", "condition": "role:screens+role:setup", "weight": 0.3 },
+    { "id": "psychic-expandingforce", "descriptionPt": "Psychic Surge ativa Expanding Force em área", "condition": "ability:psychicsurge+move:expandingforce", "weight": 0.7 },
+    { "id": "grassy-glide", "descriptionPt": "Grassy Surge dá prioridade ao Grassy Glide", "condition": "ability:grassysurge+move:grassyglide", "weight": 0.5 },
+    { "id": "electric-risingvoltage", "descriptionPt": "Electric Surge dobra o Rising Voltage", "condition": "ability:electricsurge+move:risingvoltage", "weight": 0.5 },
+    { "id": "perish-trap", "descriptionPt": "Perish Song com Shadow Tag forma o Perish Trap", "condition": "move:perishsong+ability:shadowtag", "weight": 0.8 },
+    { "id": "sun-chlorophyll", "descriptionPt": "Drought dobra a velocidade de quem tem Chlorophyll", "condition": "ability:drought+ability:chlorophyll", "weight": 0.7 },
+    { "id": "rain-swiftswim", "descriptionPt": "Drizzle dobra a velocidade de quem tem Swift Swim", "condition": "ability:drizzle+ability:swiftswim", "weight": 0.7 },
+    { "id": "sand-sandrush", "descriptionPt": "Sand Stream dobra a velocidade de quem tem Sand Rush", "condition": "ability:sandstream+ability:sandrush", "weight": 0.6 },
+    { "id": "snow-slushrush", "descriptionPt": "Snow Warning dobra a velocidade de quem tem Slush Rush", "condition": "ability:snowwarning+ability:slushrush", "weight": 0.6 },
+    { "id": "snow-veil", "descriptionPt": "Snow Warning libera Aurora Veil", "condition": "ability:snowwarning+move:auroraveil", "weight": 0.6 }
+  ],
+  "moveHeuristics": [
+    { "id": "usage", "descriptionPt": "Peso do uso no meta (fração de sets da espécie com o golpe).", "rule": "score += peso × uso", "weight": 0.8 },
+    { "id": "intrinsic", "descriptionPt": "Valor teórico do golpe (poder com STAB, atributo, precisão; papel do golpe de status).", "rule": "score += peso × intrínseco (peso 1 sem dados de meta)", "weight": 0.5 },
+    { "id": "role-fill", "descriptionPt": "Golpe que cumpre um papel que falta na equipe (ex.: Icy Wind/Tailwind sem controle de velocidade).", "rule": "score += peso × importância do papel × qualidade", "weight": 0.8 },
+    { "id": "coverage", "descriptionPt": "Acerta super efetivo tipos que o resto da equipe não cobre.", "rule": "score += peso por tipo (máx. 3)", "weight": 0.12 },
+    { "id": "threat-coverage", "descriptionPt": "Super efetivo contra ameaças do meta que pressionam a equipe.", "rule": "score += peso × perigo da ameaça", "weight": 0.25 },
+    { "id": "spread-doubles", "descriptionPt": "Ataque em área: ×0,75 de dano, mas acerta os dois oponentes.", "rule": "poder efetivo × peso", "weight": 1.2 },
+    { "id": "ally-hit", "descriptionPt": "Golpe em área que acerta o parceiro (Earthquake, Surf, Discharge, Explosion) sem parceiro imune.", "rule": "score -= peso × fração de parceiros não imunes", "weight": 0.4 },
+    { "id": "archetype-conflict", "descriptionPt": "Conflita com o modo da equipe (Tailwind em Trick Room, clima oposto...).", "rule": "score -= peso × confiança do arquétipo", "weight": 0.9 },
+    { "id": "archetype-setter", "descriptionPt": "Ativa o modo da equipe (setter extra de Trick Room, clima, terreno).", "rule": "score += peso × confiança do arquétipo", "weight": 0.25 },
+    { "id": "protect-baseline", "descriptionPt": "Protect é básico em VGC (exceto com Choice Scarf).", "rule": "intrínseco = peso", "weight": 0.55 },
+    { "id": "choice-status", "descriptionPt": "Com Choice Scarf o Pokémon fica preso no golpe: status quase nunca vale a pena.", "rule": "score -= peso", "weight": 0.8 },
+    { "id": "prankster-status", "descriptionPt": "Prankster dá prioridade a golpes de status.", "rule": "score += peso", "weight": 0.15 },
+    { "id": "redundancy-type", "descriptionPt": "Segundo golpe do mesmo tipo rende menos.", "rule": "score -= peso", "weight": 0.3 },
+    { "id": "redundancy-role", "descriptionPt": "Segundo golpe com o mesmo papel rende menos.", "rule": "score -= peso × importância", "weight": 0.5 },
+    { "id": "wideguard-meta", "descriptionPt": "Wide Guard vale mais quanto mais ataques em área o meta usa.", "rule": "score += peso × pressão de golpes em área", "weight": 0.35 },
+    { "id": "support-bias", "descriptionPt": "Pokémon de suporte aproveitam melhor Helping Hand/Follow Me.", "rule": "score += peso", "weight": 0.15 }
+  ],
+  "spreadPrinciples": [
+    { "id": "sp-basics", "descriptionPt": "No Champions cada atributo recebe até 32 SP (66 no total) e cada SP vale +1 ponto no nível 50 — equivalente a 8 EVs de Scarlet/Violet." },
+    { "id": "speed-benchmarks", "descriptionPt": "Invista em Velocidade só o necessário para passar ameaças específicas do meta; o resto vai para PS e defesas ou ataque." },
+    { "id": "max-offense", "descriptionPt": "Atacantes rápidos costumam usar 32 no ataque principal e 32 em Velocidade, com natureza +Velocidade quando há empates relevantes." },
+    { "id": "trick-room", "descriptionPt": "Em Trick Room use 0 SP de Velocidade e natureza −Velocidade (Brave, Quiet, Relaxed, Sassy) para ser o mais lento possível." },
+    { "id": "bulk", "descriptionPt": "Para resistência máxima, distribua SP equilibrando PS×Defesa e PS×Def. Esp.; PS rende para os dois lados ao mesmo tempo." },
+    { "id": "tailwind", "descriptionPt": "Sob Tailwind a velocidade dobra: muitos atacantes podem cortar SP de Velocidade e ainda passar o meta sem Tailwind." }
+  ],
+  "itemHeuristics": [
+    { "item": "sitrusberry", "whenPt": "Suporte resistente que quer ficar em campo (cura 25% ao cair abaixo de 50%)." },
+    { "item": "lumberry", "whenPt": "Cura sono, queimadura ou paralisia uma vez — bom contra Spore/Will-O-Wisp e para setters de Trick Room." },
+    { "item": "focussash", "whenPt": "Atacante ou suporte frágil que precisa sobreviver a um golpe (com PS cheio)." },
+    { "item": "lifeorb", "whenPt": "Atacante que quer dano extra (×1,3) em todos os golpes, pagando 10% de PS por ataque." },
+    { "item": "choicescarf", "whenPt": "Atacante de velocidade média que quer passar o meta sem depender de Tailwind (fica preso em um golpe)." },
+    { "item": "rockyhelmet", "whenPt": "Pokémon fisicamente resistente que recebe golpes de contato (Fake Out, U-turn, Close Combat)." },
+    { "item": "leftovers", "whenPt": "Pokémon resistente que fica muitos turnos em campo." },
+    { "item": "wiseglasses", "whenPt": "Atacante especial (×1,1 em golpes especiais) sem perder a flexibilidade de escolher golpes." },
+    { "item": "muscleband", "whenPt": "Atacante físico (×1,1 em golpes físicos) sem ficar preso em um golpe." },
+    { "item": "expertbelt", "whenPt": "Atacante com boa cobertura: golpes super efetivos ×1,2." },
+    { "item": "lightclay", "whenPt": "Quem usa Reflect, Light Screen ou Aurora Veil: telas duram 8 turnos." },
+    { "item": "mentalherb", "whenPt": "Setter de Trick Room/Tailwind que não pode sofrer Taunt ou Encore." },
+    { "item": "whiteherb", "whenPt": "Restaura atributos reduzidos (Intimidate, Close Combat, Shell Smash, Make It Rain)." },
+    { "item": "heatrock", "whenPt": "Setter de sol: o clima dura 8 turnos." },
+    { "item": "damprock", "whenPt": "Setter de chuva: o clima dura 8 turnos." },
+    { "item": "smoothrock", "whenPt": "Setter de areia: o clima dura 8 turnos." },
+    { "item": "icyrock", "whenPt": "Setter de neve: o clima dura 8 turnos." },
+    { "item": "terrainextender", "whenPt": "Setter de terreno: o terreno dura 8 turnos." },
+    { "item": "airballoon", "whenPt": "Pokémon fraco a Terrestre que quer evitar Earthquake até o balão estourar." },
+    { "item": "ejectbutton", "whenPt": "Pivô defensivo: sai de campo ao ser atingido, trazendo um parceiro com segurança." },
+    { "item": "electricseed", "whenPt": "Em Electric Terrain: +1 Defesa ao entrar." },
+    { "item": "grassyseed", "whenPt": "Em Grassy Terrain: +1 Defesa ao entrar." },
+    { "item": "psychicseed", "whenPt": "Em Psychic Terrain: +1 Def. Esp. ao entrar." },
+    { "item": "mistyseed", "whenPt": "Em Misty Terrain: +1 Def. Esp. ao entrar." }
+  ]
+}

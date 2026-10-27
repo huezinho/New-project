@@ -24,6 +24,7 @@ export function typeEffectiveness(chart: Dex['typechart'], attack: TypeName, def
 export const ABILITY_TYPE_MODIFIERS: Record<string, { type: TypeName; mult: number; absorb?: string }[]> = {
   levitate: [{ type: 'Ground', mult: 0 }],
   eartheater: [{ type: 'Ground', mult: 0, absorb: 'cura 25%' }],
+  eelevate: [{ type: 'Ground', mult: 0 }],
   flashfire: [{ type: 'Fire', mult: 0, absorb: 'aumenta golpes de Fogo' }],
   wellbakedbody: [{ type: 'Fire', mult: 0, absorb: '+2 Defesa' }],
   waterabsorb: [{ type: 'Water', mult: 0, absorb: 'cura 25%' }],
@@ -55,6 +56,30 @@ export function effectivenessWithAbility(
   if (mult > 1 && SUPER_EFFECTIVE_REDUCERS.has(abilityId)) mult *= 0.75;
   if (abilityId === 'wonderguard' && mult <= 1) mult = 0;
   return mult;
+}
+
+/** Habilidades do atacante que ignoram habilidades defensivas (Levitate, Flash Fire...). */
+export const MOLD_BREAKERS = new Set(['moldbreaker', 'teravolt', 'turboblaze']);
+
+/**
+ * Efetividade considerando também a habilidade do atacante: Mold Breaker
+ * ignora imunidades por habilidade e Scrappy acerta Fantasma com Normal/Lutador.
+ */
+export function attackEffectiveness(
+  chart: Dex['typechart'],
+  attack: TypeName,
+  defenderTypes: readonly TypeName[],
+  defenderAbility?: string,
+  attackerAbility?: string,
+): number {
+  const atk = toId(attackerAbility);
+  const ability = MOLD_BREAKERS.has(atk) ? undefined : defenderAbility;
+  if ((atk === 'scrappy' || atk === 'mindseye') && (attack === 'Normal' || attack === 'Fighting') && defenderTypes.includes('Ghost')) {
+    // Fantasma passa a contar como neutro para Normal/Lutador.
+    const others = defenderTypes.filter(t => t !== 'Ghost');
+    return others.length ? effectivenessWithAbility(chart, attack, others, ability) : effectivenessWithAbility(chart, attack, ['Ghost'], ability) || 1;
+  }
+  return effectivenessWithAbility(chart, attack, defenderTypes, ability);
 }
 
 /** Perfil defensivo completo (multiplicador para cada tipo de ataque). */

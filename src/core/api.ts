@@ -16,6 +16,12 @@ export interface RoleDef {
   items: string[];
   /** Importância relativa do papel numa equipe de VGC (0-1). */
   weight: number;
+  /** Qualidade (0-1) de cada golpe/habilidade/item neste papel (padrão 1). */
+  quality?: Record<string, number>;
+  /** Traços de espécie que também cumprem o papel (ex.: "basespe<=60&attack>=100"). */
+  traits?: string[];
+  /** "member": avaliado em cada membro (ex.: Protect) e não entra em papéis faltando. */
+  scope?: 'team' | 'member';
 }
 
 export interface ArchetypeDef {
@@ -26,6 +32,8 @@ export interface ArchetypeDef {
   speedProfile: 'fast' | 'slow' | 'mixed';
   antiSynergyMoves: string[];
   description: string;
+  /** Além do setter, exige pelo menos um destes (ex.: Perish Trap precisa de quem prenda). */
+  requires?: { moves: string[]; abilities: string[] };
 }
 
 export interface Heuristics {
@@ -140,6 +148,12 @@ export interface ScoreComponent {
   weight: number;
 }
 
+/*
+ * Convenção: espécies, golpes, itens, habilidades e naturezas nas sugestões
+ * usam o NOME de exibição (como no paste do Showdown: "Rotom-Wash", "Fake Out",
+ * "Sitrus Berry"); use toId() para comparar.
+ */
+
 export interface PokemonSuggestion {
   species: string;
   score: number;
@@ -193,6 +207,51 @@ export interface SpreadSuggestion {
   stats: StatsTable;
   usage?: number;
   reasonsPt: string[];
+}
+
+/* ------------------------------ Dano ------------------------------- */
+
+export interface DamageFieldOptions {
+  weather?: 'Sun' | 'Rain' | 'Sand' | 'Snow';
+  terrain?: 'Electric' | 'Grassy' | 'Psychic' | 'Misty';
+  helpingHand?: boolean;
+  reflect?: boolean;
+  lightScreen?: boolean;
+  auroraVeil?: boolean;
+  friendGuard?: boolean;
+  /** Estágios de boost do atacante/defensor (ex.: Intimidate = { atk: -1 }). */
+  attackerBoosts?: Partial<StatsTable>;
+  defenderBoosts?: Partial<StatsTable>;
+}
+
+export interface DamageResult {
+  attacker: string;
+  defender: string;
+  move: string;
+  /** Dano em PS e em % do PS máximo do defensor. */
+  min: number;
+  max: number;
+  minPct: number;
+  maxPct: number;
+  /** Chance de KO em `koHits` golpes (0-1); koHits = 0 quando não há KO em até 4 golpes. */
+  koChance: number;
+  koHits: number;
+  koTextPt: string;
+  /** Descrição completa do @smogon/calc (em inglês). */
+  desc: string;
+}
+
+export interface MatchupEntry {
+  slot: number;
+  species: string;
+  threat: string;
+  threatUsage: number;
+  /** Melhor golpe do membro contra a ameaça. */
+  offense: DamageResult | null;
+  /** Melhor golpe da ameaça (set comum do meta) contra o membro. */
+  defense: DamageResult | null;
+  /** O membro age antes da ameaça (sem modificadores de campo). */
+  outspeeds: boolean | null;
 }
 
 export interface EngineApi {
