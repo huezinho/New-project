@@ -1,0 +1,54 @@
+name: Atualizar dados
+
+# Mantém o banco de dados sempre atualizado: regulação atual, patches
+# (buffs/nerfs) via mod "champions" do Pokémon Showdown, uso do ladder
+# (Smogon), torneios (Limitless) e replays recentes.
+on:
+  schedule:
+    - cron: '17 6 * * *' # todo dia, 06:17 UTC
+  workflow_dispatch:
+    inputs:
+      replays:
+        description: 'Quantidade de replays do Showdown a analisar'
+        default: '300'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-data
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Baixar o Pokémon Showdown (dados do Champions)
+        run: git clone --depth 1 https://github.com/smogon/pokemon-showdown .cache/pokemon-showdown
+      - name: Atualizar dex (espécies, golpes, regulação, patches)
+        run: npm run update:dex
+        env:
+          SHOWDOWN_DIR: .cache/pokemon-showdown
+      - name: Atualizar meta (uso, vitórias, torneios)
+        run: npm run update:meta -- --replays=${{ github.event.inputs.replays || '300' }}
+        env:
+          LIMITLESS_API_KEY: ${{ secrets.LIMITLESS_API_KEY }}
+      - run: npm test
+      - name: Commit se houver mudanças
+        run: |
+          if git diff --quiet -- public/data; then
+            echo "Sem mudanças nos dados."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/data
+          git commit -m "Dados atualizados automaticamente ($(date -u +%Y-%m-%d))"
+          git push
