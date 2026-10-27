@@ -9,11 +9,13 @@ import type { Dex, Meta } from '../core/types.ts';
 export interface PatchChange {
   kind?: string;
   name?: string;
+  id?: string;
   field?: string;
   from?: unknown;
   to?: unknown;
   direction?: 'buff' | 'nerf' | 'change' | string;
   notePt?: string;
+  source?: string;
 }
 
 export interface PatchVersion {
@@ -25,9 +27,26 @@ export interface PatchVersion {
   notesPt?: string | string[];
 }
 
+export interface SimulatorFix {
+  commit?: string;
+  date?: string;
+  notePt?: string;
+  source?: string;
+}
+
 export interface PatchesFile {
+  meta: { generatedAt?: string; showdownCommit?: string; currentRegulation?: string; currentGameVersion?: string; ppFormula?: string; notePt?: string } | null;
   versions: PatchVersion[];
   championsVsSV: unknown[];
+  unavailableButDataChanged: PatchChange[];
+  simulatorFixes: SimulatorFix[];
+  gaps: string[];
+}
+
+export interface RankedSeason {
+  season?: string;
+  start?: string | null;
+  end?: string | null;
 }
 
 export interface RegulationInfo {
@@ -36,6 +55,10 @@ export interface RegulationInfo {
   start?: string;
   end?: string | null;
   notes?: string | string[];
+  rankedSeasons?: RankedSeason[];
+  events?: { event?: string; date?: string }[];
+  showdownFormatId?: string;
+  sources?: string[];
 }
 
 export interface SeasonEvent {
@@ -43,13 +66,35 @@ export interface SeasonEvent {
   location?: string;
   date?: string;
   regulation?: string;
+  status?: string;
+  source?: string;
+}
+
+export interface ItemAvailability {
+  item: string;
+  available?: boolean;
+  availableMB?: boolean;
+  availableMA?: boolean;
+}
+
+export interface LegalityDiff {
+  added?: string[];
+  removed?: string[];
+  addedMegas?: string[];
 }
 
 export interface RegulationsFile {
   currentRegulation?: string;
+  generatedAt?: string;
+  currentRegulationWindow: { start?: string; end?: string; source?: string } | null;
+  nextRegulation: { id?: string | null; announced?: boolean; expectedStart?: string; sources?: string[] } | null;
   regulations: RegulationInfo[];
   season2027: SeasonEvent[];
   battleRules: Record<string, unknown> | null;
+  itemsAvailability: ItemAvailability[];
+  /** Diferenças de legalidade entre regulações, ex.: { "M-B→M-C": {...} }. */
+  legalityDiffs: { from: string; to: string; diff: LegalityDiff }[];
+  gameVersion?: string;
 }
 
 export interface AppData {
@@ -126,18 +171,42 @@ function checkHeuristics(v: unknown): Heuristics {
   };
 }
 
+const str = (v: unknown): string | undefined => (typeof v === 'string' && v.trim() ? v : undefined);
+
 function checkPatches(v: unknown): PatchesFile | null {
   if (!isObj(v)) return null;
-  return { versions: arr(v.versions), championsVsSV: arr(v.championsVsSV) };
+  return {
+    meta: isObj(v.meta) ? (v.meta as PatchesFile['meta']) : null,
+    versions: arr<PatchVersion>(v.versions).filter(isObj),
+    championsVsSV: arr(v.championsVsSV),
+    unavailableButDataChanged: arr<PatchChange>(v.unavailableButDataChanged).filter(isObj),
+    simulatorFixes: arr<SimulatorFix>(v.simulatorFixes).filter(isObj),
+    gaps: arr(v.gaps).filter((g): g is string => typeof g === 'string'),
+  };
 }
 
 function checkRegulations(v: unknown): RegulationsFile | null {
   if (!isObj(v)) return null;
+  // legalityDiffMBtoMC, legalityDiffMAtoMB...
+  const legalityDiffs: RegulationsFile['legalityDiffs'] = [];
+  for (const [key, val] of Object.entries(v)) {
+    const m = /^legalityDiff([A-Z]{1,2})([A-Z]{1,2})to([A-Z]{1,2})([A-Z]{1,2})$/.exec(key);
+    if (m && isObj(val)) legalityDiffs.push({ from: `${m[1]}-${m[2]}`, to: `${m[3]}-${m[4]}`, diff: val as LegalityDiff });
+  }
+  legalityDiffs.sort((a, b) => b.to.localeCompare(a.to));
+  const game = isObj(v.game) ? v.game : null;
+  const versions = game ? arr<{ version?: string }>(game.gameVersions) : [];
   return {
-    currentRegulation: typeof v.currentRegulation === 'string' ? v.currentRegulation : undefined,
-    regulations: arr(v.regulations),
-    season2027: arr(v.season2027),
+    currentRegulation: str(v.currentRegulation),
+    generatedAt: str(v.generatedAt),
+    currentRegulationWindow: isObj(v.currentRegulationWindow) ? (v.currentRegulationWindow as RegulationsFile['currentRegulationWindow']) : null,
+    nextRegulation: isObj(v.nextRegulation) ? (v.nextRegulation as RegulationsFile['nextRegulation']) : null,
+    regulations: arr<RegulationInfo>(v.regulations).filter(isObj),
+    season2027: arr<SeasonEvent>(v.season2027).filter(isObj),
     battleRules: isObj(v.battleRules) ? v.battleRules : null,
+    itemsAvailability: arr<ItemAvailability>(v.itemsAvailability).filter(i => isObj(i) && typeof i.item === 'string'),
+    legalityDiffs,
+    gameVersion: versions.length ? str(versions[versions.length - 1]?.version) : undefined,
   };
 }
 

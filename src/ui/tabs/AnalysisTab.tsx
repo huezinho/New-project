@@ -14,7 +14,7 @@ import { formatMult, itemClauseConflicts, megaStoneCount, multClass, speciesClau
 import type { DexAccess } from '../../core/dex.ts';
 
 export function AnalysisTab() {
-  const { bridge, dex, engineTeam, engineKey, goTab, pending } = useApp();
+  const { bridge, data, dex, engineTeam, engineKey, goTab, pending } = useApp();
   if (!engineTeam.length) {
     return (
       <EmptyState title="Nenhum Pokémon na equipe" icon="◔">
@@ -29,7 +29,7 @@ export function AnalysisTab() {
   const a: TeamAnalysis | null = res.ok ? res.value : null;
   const defensive = a?.defensive?.length ? a.defensive : simpleDefensive(dex, engineTeam);
   const offensive = a?.offensive?.length ? a.offensive : simpleOffensive(dex, engineTeam);
-  const speed = a?.speedTiers?.length ? a.speedTiers : simpleSpeed(dex, engineTeam);
+  const speed = a?.speedTiers?.length ? a.speedTiers : simpleSpeed(dex, engineTeam, data.meta);
   const issues = a ? a.issues ?? [] : localIssues(dex, engineTeam);
 
   return (
@@ -185,6 +185,7 @@ function DefensiveMatrix({ rows, team }: { rows: TypeMatchupRow[]; team: Team })
                 <th scope="row" title={r.abilityNotes.length ? `Habilidades: ${r.abilityNotes.join('; ')}` : undefined}>
                   <TypeBadge type={r.type} small />
                   {r.abilityNotes.length > 0 && <span className="ab-mark" aria-label={`Habilidades: ${r.abilityNotes.join('; ')}`}>★</span>}
+                  {r.status !== 'ok' && <span className="sr-only"> ({STATUS_LABEL[r.status]})</span>}
                 </th>
                 {r.multipliers.map((m, i) => (
                   <td key={i} className={`mcell ${multClass(m)}`}>
@@ -194,7 +195,6 @@ function DefensiveMatrix({ rows, team }: { rows: TypeMatchupRow[]; team: Team })
                 <td className={`tot ${r.weak >= 3 ? 'bad' : r.weak >= 2 ? 'warn' : ''}`}>{r.weak}</td>
                 <td className="tot">{r.resist}</td>
                 <td className="tot">{r.immune}</td>
-                <td className="sr-only">{STATUS_LABEL[r.status]}</td>
               </tr>
             ))}
           </tbody>

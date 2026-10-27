@@ -1,6 +1,6 @@
 /** Editor do set do slot selecionado: espécie, item, habilidade, natureza, SP e golpes. */
 import { useMemo, type CSSProperties } from 'react';
-import type { MoveSuggestion } from '../../core/api.ts';
+import type { AbilitySuggestion, ItemSuggestion, MoveSuggestion, SpreadSuggestion } from '../../core/api.ts';
 import { toId } from '../../core/id.ts';
 import { CATEGORY_PT, NATURE_PT, pct, STAT_PT, STAT_SHORT, TYPE_PT } from '../../core/i18n.ts';
 import { calcStats, emptySP, natureMultiplier, SP_MAX, SP_TOTAL, STAT_IDS, totalSP } from '../../core/stats.ts';
@@ -9,7 +9,7 @@ import { Combobox, type ComboOption } from '../components/Combobox.tsx';
 import { Card, EngineNotice, Notice, Reasons, ScoreBar } from '../components/common.tsx';
 import { Sprite } from '../components/Sprite.tsx';
 import { TypeBadge, TypeList } from '../components/TypeBadge.tsx';
-import { runAbilities, runItems, runMoves, runSpreads } from '../engineBridge.ts';
+import { runAbilities, runItems, runMoves, runSpreads, type Safe } from '../engineBridge.ts';
 import { useApp } from '../state.tsx';
 import { displayName, displayScore, isMegaStone, itemsForSpecies, MAX_TEAM, sanitizeSP, setSPValue, spSummary } from '../util.ts';
 
@@ -451,111 +451,162 @@ function MoveList({ names, other }: { names: string[]; other: string[] }) {
   );
 }
 
+/** Sugestões de reserva a partir do uso no meta (quando o motor não responde). */
+function useMetaFallback(slot: number, set: PokemonSet) {
+  const { dex, data, team } = useApp();
+  return useMemo(() => {
+    const species = dex.species(set.species);
+    const mp = species ? data.meta.pokemon[species.id] : undefined;
+    if (!species || !mp) return { items: [] as ItemSuggestion[], abilities: [] as AbilitySuggestion[], spreads: [] as SpreadSuggestion[] };
+    const used = new Set(team.filter((_, i) => i !== slot).map(s => toId(s.item)).filter(Boolean));
+    const items: ItemSuggestion[] = mp.items
+      .map(i => ({ i, item: dex.item(i.id) }))
+      .filter(({ item }) => item && item.legal[dex.regulation] && (!isMegaStone(item) || !!item.megaStone![species.name]))
+      .slice(0, 6)
+      .map(({ i, item }) => ({
+        item: item!.name, score: i.share, usage: i.share, blocked: used.has(item!.id),
+        reasonsPt: [`Usado por ${pct(i.share)} dos ${species.name} no meta.`],
+      }));
+    const legalAbilities = new Set(Object.values(species.abilities).map(toId));
+    const abilities: AbilitySuggestion[] = mp.abilities
+      .filter(a => legalAbilities.has(toId(a.id)))
+      .slice(0, 4)
+      .map(a => ({ ability: dex.ability(a.id)?.name ?? a.name, score: a.share, usage: a.share, reasonsPt: [`Escolhida por ${pct(a.share)} no meta.`] }));
+    const spreads: SpreadSuggestion[] = mp.spreads.slice(0, 4).map((sp, k) => {
+      const nature = dex.data.natures[toId(sp.nature)];
+      const clean = sanitizeSP(sp.sp);
+      const form = dex.battleForm(set) ?? species;
+      return {
+        id: `meta-${k}`, labelPt: k === 0 ? 'Mais usado' : `${k + 1}º mais usado`, nature: nature?.name ?? sp.nature, sp: clean,
+        stats: calcStats(form, clean, nature), usage: sp.share, reasonsPt: [],
+      };
+    });
+    return { items, abilities, spreads };
+  }, [dex, data.meta, team, slot, set]);
+}
+
 function SetSuggestions({ slot, set, ready }: { slot: number; set: PokemonSet; ready: boolean }) {
   const { dex, bridge, engineTeam, engineKey, updateSet } = useApp();
+  const fb = useMetaFallback(slot, set);
   if (!ready) return <p className="muted small">Atualizando sugestões de item, habilidade e spread…</p>;
-  const items = runItems(bridge, engineTeam, engineKey, slot);
-  const abilities = runAbilities(bridge, engineTeam, engineKey, slot);
-  const spreads = runSpreads(bridge, engineTeam, engineKey, slot);
+  const itemsRes = runItems(bridge, engineTeam, engineKey, slot);
+  const abilitiesRes = runAbilities(bridge, engineTeam, engineKey, slot);
+  const spreadsRes = runSpreads(bridge, engineTeam, engineKey, slot);
+  const items = itemsRes.ok ? itemsRes.value : fb.items;
+  const abilities = abilitiesRes.ok ? abilitiesRes.value : fb.abilities;
+  const spreads = spreadsRes.ok ? spreadsRes.value : fb.spreads;
+  const allFailed = !itemsRes.ok && !abilitiesRes.ok && !spreadsRes.ok;
+  const hasFallback = fb.items.length + fb.abilities.length + fb.spreads.length > 0;
+  const note = (res: Safe<unknown>, list: unknown[]) =>
+    res.ok ? null : list.length ? <p className="small muted">Pelo uso no meta (motor indisponível).</p> : <p className="small muted">Sem sugestões no momento.</p>;
+  if (allFailed && !hasFallback) {
+    return (
+      <section className="subsection" aria-label="Sugestões para este Pokémon">
+        <EngineNotice
+          result={itemsRes}
+          what="Sugestões de item, habilidade e spread"
+          fallback="Elas aparecem aqui quando o motor responder ou quando houver dados de uso desta espécie."
+        />
+      </section>
+    );
+  }
   return (
     <section className="subsection" aria-label="Sugestões para este Pokémon">
+      {allFailed && (
+        <EngineNotice result={itemsRes} what="Sugestões do motor" fallback="Mostrando os itens, habilidades e spreads mais usados no meta." />
+      )}
       <div className="sugg-cols">
         <div>
           <h3>Itens sugeridos</h3>
-          <EngineNotice result={items} what="Sugestão de itens" />
-          {items.ok && (
-            <ul className="pick-list">
-              {items.value.slice(0, 6).map(it => {
-                const name = displayName(dex, 'item', it.item);
-                const current = toId(name) === toId(set.item);
-                return (
-                  <li key={it.item} className={it.blocked ? 'blocked' : ''}>
-                    <div className="pick-head">
-                      <strong>{name}</strong>
-                      <span className="score-chip">★ {displayScore(it.score)}</span>
-                      {it.usage > 0 && <span className="usage">{pct(it.usage)}</span>}
-                    </div>
-                    <ScoreBar value={displayScore(it.score) / 100} tone={it.blocked ? 'muted' : 'accent'} />
-                    <Reasons items={it.reasonsPt} max={2} />
-                    <button
-                      type="button"
-                      className="btn btn-sm"
-                      disabled={current || it.blocked}
-                      title={it.blocked ? 'Já usado por outro membro (Item Clause)' : undefined}
-                      onClick={() => updateSet(slot, { item: name })}
-                    >
-                      {current ? 'Em uso' : it.blocked ? 'Bloqueado (Item Clause)' : 'Aplicar'}
-                    </button>
-                  </li>
-                );
-              })}
-              {items.value.length === 0 && <li className="muted small">Sem sugestões.</li>}
-            </ul>
-          )}
+          {!allFailed && note(itemsRes, items)}
+          <ul className="pick-list">
+            {items.slice(0, 6).map(it => {
+              const name = displayName(dex, 'item', it.item);
+              const current = toId(name) === toId(set.item);
+              return (
+                <li key={it.item} className={it.blocked ? 'blocked' : ''}>
+                  <div className="pick-head">
+                    <strong>{name}</strong>
+                    {itemsRes.ok && <span className="score-chip">★ {displayScore(it.score)}</span>}
+                    {it.usage > 0 && <span className="usage">{pct(it.usage)}</span>}
+                  </div>
+                  <ScoreBar value={itemsRes.ok ? displayScore(it.score) / 100 : it.usage} tone={it.blocked ? 'muted' : 'accent'} />
+                  <Reasons items={it.reasonsPt} max={2} />
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    disabled={current || it.blocked}
+                    title={it.blocked ? 'Já usado por outro membro (Item Clause)' : undefined}
+                    onClick={() => updateSet(slot, { item: name })}
+                  >
+                    {current ? 'Em uso' : it.blocked ? 'Bloqueado (Item Clause)' : 'Aplicar'}
+                  </button>
+                </li>
+              );
+            })}
+            {itemsRes.ok && items.length === 0 && <li className="muted small">Sem sugestões.</li>}
+          </ul>
         </div>
         <div>
           <h3>Habilidades</h3>
-          <EngineNotice result={abilities} what="Sugestão de habilidades" />
-          {abilities.ok && (
-            <ul className="pick-list">
-              {abilities.value.slice(0, 4).map(ab => {
-                const name = displayName(dex, 'ability', ab.ability);
-                const current = toId(name) === toId(set.ability);
-                return (
-                  <li key={ab.ability}>
-                    <div className="pick-head">
-                      <strong>{name}</strong>
-                      <span className="score-chip">★ {displayScore(ab.score)}</span>
-                      {ab.usage > 0 && <span className="usage">{pct(ab.usage)}</span>}
-                    </div>
-                    <ScoreBar value={displayScore(ab.score) / 100} />
-                    <Reasons items={ab.reasonsPt} max={2} />
-                    <button type="button" className="btn btn-sm" disabled={current} onClick={() => updateSet(slot, { ability: name })}>
-                      {current ? 'Em uso' : 'Aplicar'}
-                    </button>
-                  </li>
-                );
-              })}
-              {abilities.value.length === 0 && <li className="muted small">Sem sugestões.</li>}
-            </ul>
-          )}
+          {!allFailed && note(abilitiesRes, abilities)}
+          <ul className="pick-list">
+            {abilities.slice(0, 4).map(ab => {
+              const name = displayName(dex, 'ability', ab.ability);
+              const current = toId(name) === toId(set.ability);
+              return (
+                <li key={ab.ability}>
+                  <div className="pick-head">
+                    <strong>{name}</strong>
+                    {abilitiesRes.ok && <span className="score-chip">★ {displayScore(ab.score)}</span>}
+                    {ab.usage > 0 && <span className="usage">{pct(ab.usage)}</span>}
+                  </div>
+                  <ScoreBar value={abilitiesRes.ok ? displayScore(ab.score) / 100 : ab.usage} />
+                  <Reasons items={ab.reasonsPt} max={2} />
+                  <button type="button" className="btn btn-sm" disabled={current} onClick={() => updateSet(slot, { ability: name })}>
+                    {current ? 'Em uso' : 'Aplicar'}
+                  </button>
+                </li>
+              );
+            })}
+            {abilitiesRes.ok && abilities.length === 0 && <li className="muted small">Sem sugestões.</li>}
+          </ul>
         </div>
         <div>
           <h3>Spreads de SP</h3>
-          <EngineNotice result={spreads} what="Sugestão de spreads" />
-          {spreads.ok && (
-            <ul className="pick-list">
-              {spreads.value.slice(0, 4).map(sp => {
-                const current = toId(sp.nature) === toId(set.nature) && STAT_IDS.every(s => (sp.sp[s] ?? 0) === (set.sp[s] ?? 0));
-                return (
-                  <li key={sp.id}>
-                    <div className="pick-head">
-                      <strong>{sp.labelPt}</strong>
-                      {sp.usage ? <span className="usage">{pct(sp.usage)}</span> : null}
-                    </div>
-                    <p className="small">
-                      {sp.nature} · {spSummary(sp.sp)}
+          {!allFailed && note(spreadsRes, spreads)}
+          <ul className="pick-list">
+            {spreads.slice(0, 4).map(sp => {
+              const clean = sanitizeSP(sp.sp);
+              const current = toId(sp.nature) === toId(set.nature) && STAT_IDS.every(s => clean[s] === (set.sp[s] ?? 0));
+              return (
+                <li key={sp.id}>
+                  <div className="pick-head">
+                    <strong>{sp.labelPt}</strong>
+                    {sp.usage ? <span className="usage">{pct(sp.usage)}</span> : null}
+                  </div>
+                  <p className="small">
+                    {NATURE_PT[displayName(dex, 'nature', sp.nature)] ?? sp.nature} · {spSummary(clean)}
+                  </p>
+                  {sp.stats && (
+                    <p className="small muted stat-line">
+                      {STAT_IDS.map(s => `${STAT_SHORT[s]} ${sp.stats[s]}`).join(' · ')}
                     </p>
-                    {sp.stats && (
-                      <p className="small muted stat-line">
-                        {STAT_IDS.map(s => `${STAT_SHORT[s]} ${sp.stats[s]}`).join(' · ')}
-                      </p>
-                    )}
-                    <Reasons items={sp.reasonsPt} max={2} />
-                    <button
-                      type="button"
-                      className="btn btn-sm"
-                      disabled={current}
-                      onClick={() => updateSet(slot, { nature: displayName(dex, 'nature', sp.nature), sp: sanitizeSP(sp.sp) })}
-                    >
-                      {current ? 'Em uso' : 'Aplicar'}
-                    </button>
-                  </li>
-                );
-              })}
-              {spreads.value.length === 0 && <li className="muted small">Sem sugestões.</li>}
-            </ul>
-          )}
+                  )}
+                  <Reasons items={sp.reasonsPt} max={2} />
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    disabled={current}
+                    onClick={() => updateSet(slot, { nature: displayName(dex, 'nature', sp.nature), sp: clean })}
+                  >
+                    {current ? 'Em uso' : 'Aplicar'}
+                  </button>
+                </li>
+              );
+            })}
+            {spreadsRes.ok && spreads.length === 0 && <li className="muted small">Sem sugestões.</li>}
+          </ul>
         </div>
       </div>
     </section>

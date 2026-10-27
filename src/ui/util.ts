@@ -83,6 +83,36 @@ export function formatDate(iso: string | undefined | null): string {
   return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
+/**
+ * Formata datas "soltas" dos JSON curados: "2026-09-18/20" -> "18–20/09/2026",
+ * "2026-10-31/11-01" -> "31/10–01/11/2026"; outras datas ISO no texto viram dd/mm/aaaa.
+ */
+export function formatLooseDate(raw: string | undefined | null): string {
+  if (!raw) return '—';
+  const s = raw.trim();
+  let m = /^(\d{4})-(\d{2})-(\d{2})\/(\d{2})-(\d{2})$/.exec(s);
+  if (m) return `${m[3]}/${m[2]}–${m[5]}/${m[4]}/${m[1]}`;
+  m = /^(\d{4})-(\d{2})-(\d{2})\/(\d{2})$/.exec(s);
+  if (m) return `${m[3]}–${m[4]}/${m[2]}/${m[1]}`;
+  if (/^\d{4}-\d{2}-\d{2}(T[\d:.]+Z?)?$/.test(s)) return formatDate(s);
+  return s
+    .replace(/(\d{4})-(\d{2})-(\d{2})\/(\d{2})-(\d{2})/g, (_, y, mo, d, mo2, d2) => `${d}/${mo}–${d2}/${mo2}/${y}`)
+    .replace(/(\d{4})-(\d{2})-(\d{2})\/(\d{2})(?![\d-])/g, (_, y, mo, d, d2) => `${d}–${d2}/${mo}/${y}`)
+    .replace(/(\d{4})-(\d{2})-(\d{2})(?:T[\d:.]+Z?)?/g, (_, y, mo, d) => `${d}/${mo}/${y}`);
+}
+
+/** Primeiro e último dia (UTC, ms) de uma data solta; null se não houver data ISO. */
+export function looseDateRange(raw: string | undefined | null): { start: number; end: number } | null {
+  if (!raw) return null;
+  const m = /(\d{4})-(\d{2})-(\d{2})(?:\/(\d{2})(?:-(\d{2}))?)?/.exec(raw);
+  if (!m) return null;
+  const start = Date.UTC(+m[1], +m[2] - 1, +m[3]);
+  let end = start;
+  if (m[4] && m[5]) end = Date.UTC(+m[1], +m[4] - 1, +m[5]);
+  else if (m[4]) end = Date.UTC(+m[1], +m[2] - 1, +m[4]);
+  return { start, end: Math.max(start, end) };
+}
+
 /** Idade em dias inteiros (para avisar dados antigos). */
 export function ageInDays(iso: string | undefined | null, now = Date.now()): number | null {
   if (!iso) return null;

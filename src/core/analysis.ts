@@ -14,7 +14,7 @@ import {
   resolveTeam, type FieldState, type Member, type Terrain, type ThreatProfile, type Weather,
 } from './team.ts';
 import { effectivenessWithAbility, TYPES, typeEffectiveness } from './typechart.ts';
-import { clamp01, listPt, pctPt } from './util.ts';
+import { clamp01, listPt, memo, pctPt } from './util.ts';
 import type { Team, TypeName } from './types.ts';
 
 export const ARCHETYPE_WEATHER: Record<string, Weather> = { sun: 'Sun', rain: 'Rain', sand: 'Sand', snow: 'Snow' };
@@ -478,7 +478,28 @@ function summarize(
 
 /* ------------------------------ entrada ----------------------------- */
 
+const STATE_CACHE_MAX = 96;
+
+/** Estado completo da equipe, com cache LRU por conteúdo (as sugestões reanalisam rascunhos parecidos). */
 export function teamState(ctx: EngineContext, team: Team): TeamState {
+  const lru = memo(ctx, 'teamStateLRU', () => new Map<string, TeamState>());
+  const key = JSON.stringify(team);
+  const hit = lru.get(key);
+  if (hit) {
+    lru.delete(key);
+    lru.set(key, hit);
+    return hit;
+  }
+  const state = computeTeamState(ctx, team);
+  lru.set(key, state);
+  if (lru.size > STATE_CACHE_MAX) {
+    const oldest = lru.keys().next().value;
+    if (oldest !== undefined) lru.delete(oldest);
+  }
+  return state;
+}
+
+function computeTeamState(ctx: EngineContext, team: Team): TeamState {
   const members = resolveTeam(ctx, team);
   const valid = members.filter(m => m.form);
   const roles = members.map(m => memberRoles(ctx, m));

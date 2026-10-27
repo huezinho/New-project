@@ -198,6 +198,9 @@ export interface MetaArchetype {
   keyMembers: string[];
   share: number | null;
   description: string;
+  regulation?: string;
+  winRate?: number | null;
+  games?: number | null;
 }
 
 export interface TournamentTeamMember {
