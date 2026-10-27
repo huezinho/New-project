@@ -25,10 +25,13 @@ A regulação atual é detectada automaticamente em `config/formats.ts` (formato
 
 Fontes (cada uma opcional; falhas são registradas e ignoradas):
 
-1. **Seeds** (`data/seed/*.json`): snapshot pesquisado manualmente (uso do ladder e times de torneios oficiais como o Mundial 2026).
-2. **Smogon usage stats** (`smogon.com/stats/<mês>/chaos/<formato>-<corte>.json`): uso, golpes, itens, habilidades, spreads e parceiros do ladder do Showdown, por mês.
-3. **Limitless** (`play.limitlesstcg.com/api`): torneios online com lista de times e campanha (vitórias/derrotas) → taxa de vitória real por Pokémon, dupla e set.
-4. **Replays do Showdown** (opcional, `--replays`): partidas de alto rating → time de cada jogador + vencedor.
+1. **Seeds** (`data/seed/*.json.gz`, gerados por `npm run build:seeds`): snapshot de uso do ladder e de times com resultado (37 eventos oficiais da RK9 + torneios online do Limitless).
+2. **Smogon usage stats** (`smogon.com/stats/<mês>/chaos/<formato>-<corte>.json`): uso, golpes, itens, habilidades, spreads e parceiros do ladder do Showdown, por mês. Se o site não responder, usa o espelho dividido do MunchStats no GitHub.
+3. **Team lists oficiais (RK9)** via espelho MunchStats (`stats/tournaments/tournaments_index.json`): Regionais, Internacionais e Mundial com time completo, colocação e campanha de cada jogador. Eventos da era Scarlet/Violet entram só com o Dia 2 e com peso baixo.
+4. **Limitless** (`play.limitlesstcg.com/api`): torneios online com lista de times e campanha (vitórias/derrotas) → taxa de vitória real por Pokémon, dupla e set; o espelho do MunchStats (janela de 30 dias) completa o que a API não trouxer.
+5. **Replays do Showdown** (opcional, `--replays`): partidas de alto rating → time de cada jogador (Open Team Sheets) + vencedor.
+
+Quando uma fonte ao vivo traz o mesmo mês/formato ou o mesmo evento que um seed, o seed é descartado (sem contagem dupla).
 
 Ponderação de cada amostra:
 

@@ -24,7 +24,8 @@ interface LimitlessPokemon {
   ability?: string;
   attacks?: string[];
   moves?: string[];
-  tera?: string;
+  nature?: string;
+  tera?: string | null;
 }
 
 interface LimitlessStanding {
@@ -52,10 +53,12 @@ function membersOf(decklist: LimitlessStanding['decklist']): RecordMember[] {
   const list = Array.isArray(decklist) ? decklist : decklist?.pokemon ?? [];
   return list
     .map(p => ({
-      species: p.name ?? p.id ?? '',
+      // o id do Limitless (ex.: "indeedee-f") é mais preciso que o nome ("Indeedee ♀")
+      species: p.id ?? p.name ?? '',
       item: p.item ?? null,
       ability: p.ability ?? null,
       moves: (p.attacks ?? p.moves ?? []).filter(Boolean),
+      nature: p.nature ?? null,
     }))
     .filter(m => m.species);
 }

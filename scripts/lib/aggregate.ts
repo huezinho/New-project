@@ -155,7 +155,8 @@ export function aggregate(input: AggregateInput): Meta {
   const notes = [...(input.notes ?? [])];
   const unknown = new Set<string>();
   let unknownSV = 0;
-  let svContext = false;
+  // 0 = registro do Champions; 1 = era SV (silencioso); 2 = era SV (contabiliza nomes ignorados)
+  let svContext: 0 | 1 | 2 = 0;
 
   /* ---------------------- resolução de nomes ---------------------- */
   const formeFallback = new Map<string, string>();
@@ -164,7 +165,8 @@ export function aggregate(input: AggregateInput): Meta {
     const baseId = toId(sp.baseSpecies);
     if (!dexData.species[baseId] && sp.legal[input.regulation]) formeFallback.set(baseId, sp.id);
   }
-  const resolveSpecies = (name: string): { id: string; megaItem?: string } | null => {
+  const resolveSpecies = (raw: string): { id: string; megaItem?: string } | null => {
+    const name = raw.replace(/\s*♀/g, '-F').replace(/\s*♂/g, '-M');
     let id = toId(name);
     let sp = dexData.species[id];
     if (!sp && formeFallback.has(id)) sp = dexData.species[formeFallback.get(id)!];
@@ -173,8 +175,8 @@ export function aggregate(input: AggregateInput): Meta {
       sp = dexData.species[base] ?? (formeFallback.has(base) ? dexData.species[formeFallback.get(base)!] : undefined);
     }
     if (!sp) {
-      if (svContext) unknownSV++;
-      else unknown.add(name);
+      if (svContext === 2) unknownSV++;
+      else if (!svContext) unknown.add(name);
       return null;
     }
     if (sp.isMega) {
@@ -220,6 +222,7 @@ export function aggregate(input: AggregateInput): Meta {
       common.get(sid)!.add(key);
     };
     for (const r of input.records) {
+      svContext = r.game === 'SV' || r.regulation.startsWith('SV') ? 1 : 0;
       for (const m of r.pokemon) {
         const res = resolveMember(m);
         if (!res) continue;
@@ -229,6 +232,7 @@ export function aggregate(input: AggregateInput): Meta {
         if (res.item) note(res.id, res.item);
       }
     }
+    svContext = 0;
     for (const s of input.snapshots) {
       for (const [name, e] of Object.entries(s.pokemon)) {
         const sp = resolveSpecies(name);
@@ -266,9 +270,9 @@ export function aggregate(input: AggregateInput): Meta {
   // Resolve todos os registros uma vez.
   const resolvedRecords = input.records
     .map(r => {
-      svContext = r.game === 'SV' || r.regulation.startsWith('SV');
+      svContext = r.game === 'SV' || r.regulation.startsWith('SV') ? 2 : 0;
       const members = r.pokemon.map(resolveMember).filter((m): m is Resolved => !!m);
-      svContext = false;
+      svContext = 0;
       return { r, members };
     })
     .filter(x => x.members.length >= 4);
@@ -533,7 +537,9 @@ export function aggregate(input: AggregateInput): Meta {
       placing: r.placing ?? null,
       record: r.wins !== null && r.losses !== null ? { wins: r.wins, losses: r.losses, ties: r.ties ?? 0 } : null,
       pokemon: r.pokemon.map(m => {
+        svContext = r.game === 'SV' || r.regulation.startsWith('SV') ? 1 : 0;
         const res = resolveMember(m);
+        svContext = 0;
         return {
           species: res?.name ?? m.species,
           item: res?.item ? dexData.items[res.item]?.name ?? m.item ?? null : m.item ?? null,

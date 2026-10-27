@@ -74,7 +74,9 @@ npm run sugerir -- --json < meu-time.txt     # saída em JSON
 | [Smogon usage stats](https://www.smogon.com/stats/) | uso, sets, spreads e parceiros do ladder |
 | [Limitless](https://play.limitlesstcg.com) | torneios online com times e campanhas (taxa de vitória) |
 | Replays do Showdown | partidas com Open Team Sheets e vencedor |
-| Seeds pesquisados (`data/seed/`) | snapshot do meta e times de torneios oficiais (Mundial, Regionais) |
+| [RK9 Labs](https://rk9.gg) (team lists oficiais) | 37 eventos oficiais com times e campanhas, do Mundial 2026 aos Regionais Reg M-C de 2026 (e eventos da era SV com peso baixo) |
+| Espelhos no GitHub ([MunchStats](https://github.com/PizzaTimeJoshua/munchstats)) | alternativa automática quando Smogon/Limitless estão fora do ar; fonte das team lists da RK9 |
+| Seeds (`data/seed/`) | snapshot incluído no repositório (veja [`data/seed/README.md`](data/seed/README.md)); `npm run build:seeds` regenera |
 | [@smogon/calc](https://github.com/smogon/damage-calc) | cálculos de dano com as regras do Champions |
 
 Detalhes da arquitetura e das fórmulas de pontuação em [`docs/ARQUITETURA.md`](docs/ARQUITETURA.md).
