@@ -55,6 +55,8 @@ export interface UsageSnapshot {
   regulation: string;
   cutoff?: number;
   battles: number;
+  /** Snapshots com a mesma chave (formato:período) são duplicados — o mais confiável vence. */
+  dedupeKey?: string;
   pokemon: Record<string, UsageEntry>;
 }
 

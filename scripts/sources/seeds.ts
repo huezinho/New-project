@@ -4,6 +4,7 @@
  * atualização automática.
  */
 import { existsSync, readFileSync } from 'node:fs';
+import { gunzipSync } from 'node:zlib';
 import type { MetaArchetype, StatsTable } from '../../src/core/types.ts';
 import { toId } from '../../src/core/id.ts';
 import type { EventInfo } from '../lib/aggregate.ts';
@@ -24,10 +25,25 @@ interface SeedRegulation {
   source?: { label?: string; url?: string; period?: string; cutoff?: number | string; battles?: number | null };
   pokemon: SeedPokemon[];
 }
+interface SeedSnapshot {
+  regulation: string;
+  formatId?: string;
+  period?: string;
+  cutoff?: number;
+  battles?: number;
+  label?: string;
+  url?: string;
+  pokemon: SeedPokemon[];
+}
 export interface MetaSeed {
   snapshotDate: string;
-  regulations: Record<string, SeedRegulation>;
-  archetypes?: { regulation?: string; name: string; namePt?: string; keyMembers?: string[]; description?: string; share?: number | null }[];
+  /** Formato antigo: uma entrada por regulação. */
+  regulations?: Record<string, SeedRegulation>;
+  /** Lista de snapshots resumidos (ex.: Bo1 e Bo3 da mesma regulação). */
+  snapshots?: SeedSnapshot[];
+  /** Snapshots completos no formato interno (gerados por npm run build:seeds). */
+  usageSnapshots?: UsageSnapshot[];
+  archetypes?: { regulation?: string; id?: string; name: string; namePt?: string; keyMembers?: string[]; description?: string; share?: number | null; winRate?: number | null; games?: number | null }[];
 }
 
 interface SeedTeamMember { species: string; item?: string | null; ability?: string | null; moves?: string[]; nature?: string | null; sp?: Partial<StatsTable> | null }
@@ -43,9 +59,18 @@ interface SeedEvent {
   url?: string | null;
   teams: { player?: string; country?: string | null; placing?: number | null; record?: { wins: number; losses: number; ties?: number } | null; pokemon: SeedTeamMember[] }[];
 }
-export interface TournamentSeed { events: SeedEvent[] }
+export interface TournamentSeed {
+  events: (SeedEvent | EventInfo)[];
+  /** Times já normalizados (gerados por npm run build:seeds). */
+  records?: TeamRecord[];
+}
 
-const readJson = <T>(path: string): T | null => (existsSync(path) ? (JSON.parse(readFileSync(path, 'utf8')) as T) : null);
+/** Lê `arquivo.json` ou, se não existir, `arquivo.json.gz`. */
+const readJson = <T>(path: string): T | null => {
+  if (existsSync(path)) return JSON.parse(readFileSync(path, 'utf8')) as T;
+  if (existsSync(`${path}.gz`)) return JSON.parse(gunzipSync(readFileSync(`${path}.gz`)).toString('utf8')) as T;
+  return null;
+};
 
 function periodDate(period: string | undefined, fallback: string): string {
   const m = /(\d{4})-(\d{2})/.exec(period ?? '');
@@ -64,10 +89,22 @@ const toMap = (list: SeedShare[] | undefined, key: 'name' | 'species' = 'name') 
 export function loadMetaSeed(path: string): { snapshots: UsageSnapshot[]; archetypes: MetaArchetype[] } {
   const seed = readJson<MetaSeed>(path);
   if (!seed) return { snapshots: [], archetypes: [] };
-  const snapshots: UsageSnapshot[] = [];
-  for (const [regulation, reg] of Object.entries(seed.regulations ?? {})) {
+  const entries: SeedSnapshot[] = [
+    ...(seed.snapshots ?? []),
+    ...Object.entries(seed.regulations ?? {}).map(([regulation, reg]) => ({
+      regulation,
+      period: reg.source?.period,
+      cutoff: typeof reg.source?.cutoff === 'number' ? reg.source.cutoff : undefined,
+      battles: reg.source?.battles ?? 0,
+      label: reg.source?.label,
+      url: reg.source?.url,
+      pokemon: reg.pokemon,
+    })),
+  ];
+  const snapshots: UsageSnapshot[] = (seed.usageSnapshots ?? []).map(s => ({ ...s, sourceKind: 'seed' as const }));
+  for (const snap of entries) {
     const pokemon: Record<string, UsageEntry> = {};
-    for (const p of reg.pokemon ?? []) {
+    for (const p of snap.pokemon ?? []) {
       if (!p.species || typeof p.usage !== 'number' || p.usage <= 0) continue;
       const spreads: Record<string, number> = {};
       for (const s of p.spreads ?? []) {
@@ -86,22 +123,26 @@ export function loadMetaSeed(path: string): { snapshots: UsageSnapshot[]; archet
       };
     }
     if (!Object.keys(pokemon).length) continue;
-    const src = reg.source ?? {};
+    const id = snap.formatId ?? snap.regulation;
     snapshots.push({
-      source: `seed:${regulation}`,
+      source: `seed:${id}:${snap.period ?? ''}`,
       sourceKind: 'seed',
-      label: `Seed pesquisado — ${src.label ?? 'uso'} (${regulation})`,
-      url: src.url,
-      date: periodDate(src.period, seed.snapshotDate),
-      period: src.period,
-      regulation,
-      cutoff: typeof src.cutoff === 'number' ? src.cutoff : undefined,
-      battles: src.battles ?? 0,
+      label: `${snap.label ?? `Uso ${id}`} — snapshot pesquisado`,
+      url: snap.url,
+      date: periodDate(snap.period, seed.snapshotDate),
+      period: snap.period,
+      regulation: snap.regulation,
+      cutoff: snap.cutoff,
+      battles: snap.battles ?? 0,
+      dedupeKey: snap.formatId && snap.period ? `${snap.formatId}:${snap.period}` : undefined,
       pokemon,
     });
   }
   const archetypes: MetaArchetype[] = (seed.archetypes ?? []).map(a => ({
-    id: toId(`${a.regulation ?? ''}-${a.name}`),
+    id: a.id ?? toId(`${a.regulation ?? ''}-${a.name}`),
+    regulation: a.regulation,
+    winRate: a.winRate ?? null,
+    games: a.games ?? null,
     name: a.name,
     namePt: a.namePt ?? a.name,
     keyMembers: a.keyMembers ?? [],
@@ -114,9 +155,14 @@ export function loadMetaSeed(path: string): { snapshots: UsageSnapshot[]; archet
 export function loadTournamentSeed(path: string): { records: TeamRecord[]; events: EventInfo[] } {
   const seed = readJson<TournamentSeed>(path);
   if (!seed) return { records: [], events: [] };
-  const records: TeamRecord[] = [];
+  const records: TeamRecord[] = (seed.records ?? []).map(r => ({ ...r, source: r.source.startsWith('seed:') ? r.source : `seed:${r.source}` }));
   const events: EventInfo[] = [];
-  for (const ev of seed.events ?? []) {
+  for (const raw of seed.events ?? []) {
+    if (!('teams' in raw)) {
+      events.push(raw as EventInfo);
+      continue;
+    }
+    const ev = raw as SeedEvent;
     if (!ev.id || !ev.date || !ev.teams?.length) continue;
     const kind: TeamRecord['sourceKind'] = ev.tier === 'online' ? 'online' : 'official';
     events.push({ id: ev.id, name: ev.name, date: ev.date, tier: ev.tier ?? 'official', players: ev.players ?? null, url: ev.url ?? null, game: ev.game, regulation: ev.regulation });

@@ -39,6 +39,8 @@ export interface AggregateInput {
   archetypes?: MetaArchetype[];
   events?: EventInfo[];
   notes?: string[];
+  maxOfficialEvents?: number;
+  maxOnlineEvents?: number;
 }
 
 const DAY = 86_400_000;
@@ -152,6 +154,8 @@ export function aggregate(input: AggregateInput): Meta {
   const k = input.shrinkK ?? 20;
   const notes = [...(input.notes ?? [])];
   const unknown = new Set<string>();
+  let unknownSV = 0;
+  let svContext = false;
 
   /* ---------------------- resolução de nomes ---------------------- */
   const formeFallback = new Map<string, string>();
@@ -164,8 +168,13 @@ export function aggregate(input: AggregateInput): Meta {
     let id = toId(name);
     let sp = dexData.species[id];
     if (!sp && formeFallback.has(id)) sp = dexData.species[formeFallback.get(id)!];
+    if (!sp && name.includes('-')) {
+      const base = toId(name.slice(0, name.lastIndexOf('-')));
+      sp = dexData.species[base] ?? (formeFallback.has(base) ? dexData.species[formeFallback.get(base)!] : undefined);
+    }
     if (!sp) {
-      unknown.add(name);
+      if (svContext) unknownSV++;
+      else unknown.add(name);
       return null;
     }
     if (sp.isMega) {
@@ -256,7 +265,12 @@ export function aggregate(input: AggregateInput): Meta {
 
   // Resolve todos os registros uma vez.
   const resolvedRecords = input.records
-    .map(r => ({ r, members: r.pokemon.map(resolveMember).filter((m): m is Resolved => !!m) }))
+    .map(r => {
+      svContext = r.game === 'SV' || r.regulation.startsWith('SV');
+      const members = r.pokemon.map(resolveMember).filter((m): m is Resolved => !!m);
+      svContext = false;
+      return { r, members };
+    })
     .filter(x => x.members.length >= 4);
 
   const allSpecies = new Set<string>();
@@ -349,45 +363,55 @@ export function aggregate(input: AggregateInput): Meta {
     const base = decay(s.date, input.now, half) * regulationWeight(s.regulation, input.regulationOrder) * battleFactor;
     if (base <= 1e-6) continue;
     snapTotalW += base;
-    const present = new Map<string, string>();
+    // Uma espécie pode aparecer em várias entradas (ex.: Garchomp e Garchomp-Mega-Z):
+    // somamos o uso e combinamos os sets ponderando pelo uso de cada forma.
+    const present = new Map<string, string[]>();
     for (const name of Object.keys(s.pokemon)) {
       const sp = resolveSpecies(name);
-      if (sp) present.set(sp.id, name);
+      if (sp) present.set(sp.id, [...(present.get(sp.id) ?? []), name]);
     }
     for (const sid of allSpecies) {
       const w = base * patchFactor(sid, s.date);
       const a = get(sid);
       a.snapDen += w;
-      const name = present.get(sid);
-      if (!name) {
+      const names = present.get(sid);
+      if (!names) {
         if (s.regulation === input.regulation) {
           if (isRecent(s.date)) a.recent.den += 1;
           else if (isPrevious(s.date)) a.previous.den += 1;
         }
         continue;
       }
-      const e = s.pokemon[name];
-      a.snapW += w * e.usage;
+      let usage = 0;
+      for (const name of names) {
+        const e = s.pokemon[name];
+        const megaItem = resolveSpecies(name)?.megaItem;
+        usage += e.usage;
+        const ws = w * e.usage;
+        const addAll = (t: Tally, o: Record<string, number>, resolve: (k: string) => string | undefined) => {
+          for (const [key, v] of Object.entries(o)) {
+            const id = resolve(key);
+            if (id) t.add(id, ws * v);
+          }
+          t.w += ws;
+        };
+        addAll(a.snapSets.moves, e.moves, key => (dexData.moves[toId(key)] ? toId(key) : undefined));
+        // Smogon às vezes registra a Mega Stone só na forma Mega: garantimos o item.
+        const items = megaItem && !Object.keys(e.items).some(k => toId(k) === toId(megaItem)) ? { ...e.items, [megaItem]: 1 } : e.items;
+        addAll(a.snapSets.items, items, key => (dexData.items[toId(key)] ? toId(key) : undefined));
+        addAll(a.snapSets.abilities, e.abilities, key => (dexData.abilities[toId(key)] ? toId(key) : undefined));
+        addAll(a.snapSets.spreads, e.spreads, key => (parseSpreadKey(key) ? key : undefined));
+        addAll(a.snapSets.mates, e.teammates, key => resolveSpecies(key)?.id);
+      }
+      usage = Math.min(1, usage);
+      a.snapW += w * usage;
       a.sources.add(s.label);
-      const ws = w * e.usage;
-      const addAll = (t: Tally, o: Record<string, number>, resolve: (k: string) => string | undefined) => {
-        for (const [key, v] of Object.entries(o)) {
-          const id = resolve(key);
-          if (id) t.add(id, ws * v);
-        }
-        t.w += ws;
-      };
-      addAll(a.snapSets.moves, e.moves, key => (dexData.moves[toId(key)] ? toId(key) : undefined));
-      addAll(a.snapSets.items, e.items, key => (dexData.items[toId(key)] ? toId(key) : undefined));
-      addAll(a.snapSets.abilities, e.abilities, key => (dexData.abilities[toId(key)] ? toId(key) : undefined));
-      addAll(a.snapSets.spreads, e.spreads, key => (parseSpreadKey(key) ? key : undefined));
-      addAll(a.snapSets.mates, e.teammates, key => resolveSpecies(key)?.id);
       if (s.regulation === input.regulation) {
         if (isRecent(s.date)) {
-          a.recent.num += e.usage;
+          a.recent.num += usage;
           a.recent.den += 1;
         } else if (isPrevious(s.date)) {
-          a.previous.num += e.usage;
+          a.previous.num += usage;
           a.previous.den += 1;
         }
       }
@@ -521,11 +545,16 @@ export function aggregate(input: AggregateInput): Meta {
       }),
     });
   }
-  const events = [...eventsById.values()]
+  // Mantém o meta.json leve: eventos oficiais com top 32 e online com top 8.
+  const official = (e: TournamentEvent) => e.tier !== 'online';
+  const sortedEvents = [...eventsById.values()]
     .filter(e => e.teams.length)
-    .map(e => ({ ...e, teams: e.teams.sort((a, b) => (a.placing ?? 9999) - (b.placing ?? 9999)).slice(0, 32) }))
-    .sort((a, b) => b.date.localeCompare(a.date))
-    .slice(0, 80);
+    .map(e => ({ ...e, teams: e.teams.sort((a, b) => (a.placing ?? 9999) - (b.placing ?? 9999)).slice(0, official(e) ? 32 : 8) }))
+    .sort((a, b) => b.date.localeCompare(a.date));
+  const events = [
+    ...sortedEvents.filter(official).slice(0, input.maxOfficialEvents ?? 30),
+    ...sortedEvents.filter(e => !official(e)).sort((a, b) => (b.players ?? 0) - (a.players ?? 0) || b.date.localeCompare(a.date)).slice(0, input.maxOnlineEvents ?? 25),
+  ].sort((a, b) => b.date.localeCompare(a.date));
 
   /* ------------------------------ fontes ------------------------------ */
   const sources: MetaSource[] = [];
@@ -564,6 +593,7 @@ export function aggregate(input: AggregateInput): Meta {
   sources.sort((a, b) => b.weight - a.weight);
 
   if (unknown.size) notes.push(`Nomes não reconhecidos (ignorados): ${[...unknown].slice(0, 30).join(', ')}`);
+  if (unknownSV) notes.push(`${unknownSV} Pokémon de times da era Scarlet/Violet não existem no Champions e foram ignorados (os demais membros contam com peso baixo).`);
   if (!resolvedRecords.some(x => x.r.regulation === input.regulation && x.r.wins !== null)) {
     notes.push(`Ainda não há partidas com resultado da Reg ${input.regulation}; taxas de vitória usam regulações anteriores ou ficam vazias.`);
   }

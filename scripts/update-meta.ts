@@ -18,6 +18,8 @@ import { loadMetaSeed, loadPatchEvents, loadTournamentSeed } from './sources/see
 import { fetchSmogonSnapshots } from './sources/smogon.ts';
 import { fetchLimitlessRecords, type LimitlessTournament } from './sources/limitless.ts';
 import { fetchReplayRecords } from './sources/replays.ts';
+import { fetchLimitlessMirrorRecords, fetchRk9MirrorRecords, fetchSmogonMirrorSnapshots } from './sources/mirrors.ts';
+import type { EventInfo } from './lib/aggregate.ts';
 import type { Dex } from '../src/core/types.ts';
 
 const ROOT = process.cwd();
@@ -59,18 +61,32 @@ async function main() {
 
   const snapshots: UsageSnapshot[] = [...metaSeed.snapshots];
   const records: TeamRecord[] = [...tournamentSeed.records];
+  const events: EventInfo[] = [...tournamentSeed.events];
   console.log(`[meta] seeds: ${metaSeed.snapshots.length} snapshots, ${tournamentSeed.records.length} times de torneio; ${patches.length} patches`);
 
   const formats = dex.formats.flatMap(f => [{ id: f.id, regulation: f.regulation }, ...(f.bo3Id ? [{ id: f.bo3Id, regulation: f.regulation }] : [])]);
 
   if (!offline) {
     try {
-      const smogon = await fetchSmogonSnapshots(formats, { months });
+      let smogon = await fetchSmogonSnapshots(formats, { months });
+      if (!smogon.length) {
+        console.warn('[meta] smogon.com sem dados; tentando o espelho no GitHub');
+        smogon = await fetchSmogonMirrorSnapshots(formats, { months: Math.min(months, 3) });
+      }
       snapshots.push(...smogon);
       if (!smogon.length) notes.push('Smogon stats: nenhum arquivo encontrado para os formatos do Champions no período.');
     } catch (err) {
       notes.push(`Smogon stats indisponível: ${(err as Error).message}`);
       console.warn(`[meta] smogon falhou: ${(err as Error).message}`);
+    }
+
+    try {
+      const formatMap = Object.fromEntries(formats.map(f => [f.id, f.regulation]));
+      const rk9 = await fetchRk9MirrorRecords({ formats: formatMap, since });
+      records.push(...rk9.records);
+      events.push(...rk9.events);
+    } catch (err) {
+      notes.push(`Team lists oficiais (RK9 via MunchStats) indisponíveis: ${(err as Error).message}`);
     }
 
     try {
@@ -89,8 +105,16 @@ async function main() {
       records.push(...lim);
       if (!lim.length) notes.push('Limitless: nenhum torneio do Champions com times encontrado no período.');
     } catch (err) {
-      notes.push(`Limitless indisponível: ${(err as Error).message}`);
+      notes.push(`API do Limitless indisponível: ${(err as Error).message}`);
       console.warn(`[meta] limitless falhou: ${(err as Error).message}`);
+    }
+    try {
+      // Espelho com janela de 30 dias: completa eventos que a API não trouxe.
+      const have = new Set(records.filter(r => !r.source.startsWith('seed:')).map(r => r.eventId));
+      const mirror = await fetchLimitlessMirrorRecords(dex.currentRegulation);
+      records.push(...mirror.filter(r => !have.has(r.eventId)));
+    } catch (err) {
+      notes.push(`Espelho do Limitless indisponível: ${(err as Error).message}`);
     }
 
     if (replays > 0) {
@@ -105,6 +129,17 @@ async function main() {
     notes.push('Gerado em modo offline (apenas dados semente).');
   }
 
+  // Dados ao vivo substituem os seeds equivalentes (mesmo mês/formato ou mesmo evento).
+  const liveKeys = new Set(snapshots.filter(s => s.sourceKind !== 'seed' && s.dedupeKey).map(s => s.dedupeKey));
+  const dedupedSnapshots = snapshots.filter(s => s.sourceKind !== 'seed' || !s.dedupeKey || !liveKeys.has(s.dedupeKey));
+  const liveEvents = new Set(records.filter(r => !r.source.startsWith('seed:') && r.eventId).map(r => r.eventId));
+  const dedupedRecords = records.filter(r => !r.source.startsWith('seed:') || !r.eventId || !liveEvents.has(r.eventId));
+  if (dedupedSnapshots.length !== snapshots.length || dedupedRecords.length !== records.length) {
+    console.log(`[meta] ${snapshots.length - dedupedSnapshots.length} snapshots e ${records.length - dedupedRecords.length} times dos seeds substituídos por dados ao vivo`);
+  }
+  snapshots.splice(0, snapshots.length, ...dedupedSnapshots);
+  records.splice(0, records.length, ...dedupedRecords);
+
   const order = regulationOrder(dex, [...snapshots.map(s => s.regulation), ...records.map(r => r.regulation)]);
   const meta = aggregate({
     dex,
@@ -116,7 +151,7 @@ async function main() {
     now,
     halfLifeDays: halfLife,
     archetypes: metaSeed.archetypes,
-    events: tournamentSeed.events,
+    events: [...new Map(events.map(e => [e.id, e])).values()],
     notes,
   });
 

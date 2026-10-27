@@ -78,6 +78,7 @@ export function chaosToSnapshot(chaos: ChaosFile, meta: { month: string; regulat
     regulation: meta.regulation,
     cutoff: meta.cutoff,
     battles: chaos.info['number of battles'] ?? 0,
+    dedupeKey: `${meta.formatId}:${meta.month}`,
     pokemon,
   };
 }

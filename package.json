@@ -16,6 +16,7 @@
     "update:dex": "tsx scripts/update-dex.ts",
     "update:meta": "tsx scripts/update-meta.ts",
     "update-data": "tsx scripts/update-dex.ts && tsx scripts/update-meta.ts",
+    "build:seeds": "tsx scripts/build-seeds.ts",
     "sugerir": "tsx scripts/cli.ts"
   },
   "dependencies": {
