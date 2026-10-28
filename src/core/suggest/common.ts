@@ -4,12 +4,12 @@
  * membro (eles estão sendo escolhidos) e o arquétipo da equipe.
  */
 import type { EngineContext, RoleDef } from '../api.ts';
-import { coreRoles, detectArchetypes, fieldOf, teamState, type ArchetypeHit, type TeamState } from '../analysis.ts';
-import { memberRoles, type RoleMap } from '../roles.ts';
+import { addFieldSpeedRole, coreRoles, detectArchetypes, fieldOf, teamState, type ArchetypeHit, type TeamState } from '../analysis.ts';
+import { memberRoles, rolePhrase, type RoleMap } from '../roles.ts';
 import {
-  attackStat, baseAttack, baseBulk, isDamaging, isMegaStone, metaOf, metaThreats, type FieldState, type Member, type ThreatProfile,
+  attackStat, baseAttack, baseBulk, isDamaging, isMegaStone, META_FORM_MIN, metaFormShare, metaOf, metaThreats, NON_COVERAGE,
+  type FieldState, type Member, type ThreatProfile,
 } from '../team.ts';
-import { lowerFirst } from '../util.ts';
 import type { MetaPokemon, MoveData, Team } from '../types.ts';
 
 /** Arquétipos genéricos (não definem modo de jogo específico). */
@@ -31,6 +31,8 @@ export interface SlotContext {
   archetypes: ArchetypeHit[];
   field: FieldState;
   meta?: MetaPokemon;
+  /** O meta da espécie, só se a forma em batalha do membro for comum nele (golpes e spreads). */
+  formMeta?: MetaPokemon;
   hasMeta: boolean;
   /** Mega Stones dos parceiros. */
   otherMegas: Member[];
@@ -47,13 +49,17 @@ export function slotContext(ctx: EngineContext, team: Team, slot: number): SlotC
   const count = (map: RoleMap | undefined) => {
     for (const id of map?.keys() ?? []) providers.set(id, (providers.get(id) ?? 0) + 1);
   };
+  const archetypes = detectArchetypes(ctx, [...others, bare]);
+  const field = fieldOf(archetypes);
   for (const m of others) count(state.roles[m.slot]);
-  count(memberRoles(ctx, bare));
+  const bareRoles = memberRoles(ctx, bare);
+  addFieldSpeedRole(ctx, bare, bareRoles, field);
+  count(bareRoles);
   const missing = coreRoles(ctx)
     .filter(r => !providers.get(r.id))
     .sort((a, b) => b.weight - a.weight);
-  const archetypes = detectArchetypes(ctx, [...others, bare]);
   const meta = metaOf(ctx, member.species);
+  const formMeta = meta && metaFormShare(ctx, member.species, member.item, meta) >= META_FORM_MIN ? meta : undefined;
   const otherItems = new Map<string, Member>();
   for (const m of others) if (m.itemId && !otherItems.has(m.itemId)) otherItems.set(m.itemId, m);
   return {
@@ -65,8 +71,9 @@ export function slotContext(ctx: EngineContext, team: Team, slot: number): SlotC
     providers,
     missing,
     archetypes,
-    field: fieldOf(archetypes),
+    field,
     meta,
+    formMeta,
     hasMeta: !!meta,
     otherMegas: others.filter(m => isMegaStone(m.item)),
     otherItems,
@@ -117,10 +124,13 @@ export function memberFeatures(member: Member): MemberFeatures {
   const best = baseAttack(form, member.ability);
   const bulk = baseBulk(form);
   const support = status.length >= 2 || best < 90;
+  // Golpes de dano "de verdade" (sem Fake Out, dano fixo ou utilitários fracos).
+  const strong = damaging.filter(m => !NON_COVERAGE.has(m.id) && m.id !== 'fakeout' && (m.basePower >= 60 || m.basePower === 0)).length;
+  const attacker = member.moves.length ? best >= 80 && (strong >= 2 || (strong >= 1 && best >= 100)) : best >= 95;
   return {
     physical,
     special,
-    attacker: best >= 95 && (!member.moves.length || damaging.length >= 2),
+    attacker,
     support,
     frail: bulk < 150,
     bulky: bulk >= 175,
@@ -132,31 +142,7 @@ export function memberFeatures(member: Member): MemberFeatures {
 
 /* ------------------------------ textos ------------------------------ */
 
-const ROLE_PHRASE: Record<string, string> = {
-  speedcontrol: 'controle de velocidade',
-  fakeout: 'Fake Out',
-  intimidate: 'Intimidate ou redução de ataque',
-  redirection: 'redirecionamento',
-  spread: 'ataques em área',
-  disruption: 'disrupção (Taunt, Encore, status...)',
-  support: 'suporte (Helping Hand, Ally Switch...)',
-  pivot: 'pivô (U-turn, Parting Shot...)',
-  priority: 'golpes de prioridade',
-  teamprotect: 'Wide Guard/Quick Guard',
-  screens: 'telas',
-  setup: 'setup',
-  antiintimidate: 'resposta a Intimidate',
-  weather: 'clima',
-  terrain: 'terreno',
-  trapping: 'quem prenda o oponente',
-  trickroomattacker: 'atacante de Trick Room',
-  protect: 'Protect',
-};
-
-/** Nome do papel para usar no meio de uma frase ("sua equipe não tem ..."). */
-export function rolePhrase(role: RoleDef): string {
-  return ROLE_PHRASE[role.id] ?? lowerFirst(role.namePt);
-}
+export { rolePhrase };
 
 /** Ameaças do meta com perigo para a equipe (ou por uso, se a equipe está vazia). */
 export function threatList(ctx: EngineContext, state: TeamState, limit = 10): { profile: ThreatProfile; danger: number; name: string }[] {

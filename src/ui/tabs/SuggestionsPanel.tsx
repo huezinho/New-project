@@ -3,6 +3,7 @@ import { useState } from 'react';
 import type { PokemonSuggestion, SuggestionWeights } from '../../core/api.ts';
 import { DEFAULT_WEIGHTS } from '../../core/engine.ts';
 import { pct } from '../../core/i18n.ts';
+import { toId } from '../../core/id.ts';
 import { Card, EmptyState, EngineNotice, Notice, Reasons, ScoreBar } from '../components/common.tsx';
 import { Sprite } from '../components/Sprite.tsx';
 import { TypeList } from '../components/TypeBadge.tsx';
@@ -40,13 +41,18 @@ export function SuggestionsPanel() {
         }));
   const list = res.ok ? res.value : fallback;
 
+  // a lista do motor pode estar defasada (debounce): confere sempre com a equipe atual
+  const teamNums = new Set(team.map(s => dex.species(s.species)?.num ?? toId(s.species)));
+  const usedItems = new Set(team.map(s => toId(s.item)).filter(Boolean));
+  const inTeam = (s: PokemonSuggestion) => teamNums.has(dex.species(s.species)?.num ?? toId(s.species));
+
   const add = (s: PokemonSuggestion) => {
-    if (full) return;
+    if (full || inTeam(s)) return;
     const raw = sanitizeSet(s.set);
-    if (res.ok && raw && dex.species(raw.species)) {
+    if (res.ok && !pending && raw && dex.species(raw.species) && !usedItems.has(toId(raw.item))) {
       setTeam([...team, normalizeSet(dex, raw).set]);
       setSelected(team.length);
-    } else addSpecies(displayName(dex, 'species', s.species));
+    } else addSpecies(displayName(dex, 'species', s.species)); // remonta o set para a equipe atual
   };
 
   const autoComplete = () => {
@@ -81,7 +87,7 @@ export function SuggestionsPanel() {
         ) : (
           <ol className="sugg-list">
             {list.map((s, i) => (
-              <SuggestionCard key={s.species} s={s} rank={i + 1} disabled={full} onAdd={() => add(s)} />
+              <SuggestionCard key={s.species} s={s} rank={i + 1} disabled={full} added={inTeam(s)} onAdd={() => add(s)} />
             ))}
           </ol>
         )}
@@ -91,7 +97,7 @@ export function SuggestionsPanel() {
   );
 }
 
-function SuggestionCard({ s, rank, disabled, onAdd }: { s: PokemonSuggestion; rank: number; disabled: boolean; onAdd: () => void }) {
+function SuggestionCard({ s, rank, disabled, added, onAdd }: { s: PokemonSuggestion; rank: number; disabled: boolean; added: boolean; onAdd: () => void }) {
   const { dex } = useApp();
   const species = dex.species(s.species);
   const setForm = s.set ? dex.battleForm(s.set) : undefined;
@@ -143,8 +149,8 @@ function SuggestionCard({ s, rank, disabled, onAdd }: { s: PokemonSuggestion; ra
           {s.meta ? `uso ${pct(s.meta.usage)}` : 'sem dados de uso'}
           {s.meta?.winRate !== null && s.meta?.winRate !== undefined ? ` · vitória ${pct(s.meta.winRate)}` : ''}
         </span>
-        <button type="button" className="btn btn-sm btn-primary" disabled={disabled} onClick={onAdd} aria-label={`Adicionar ${name} à equipe`}>
-          Adicionar
+        <button type="button" className="btn btn-sm btn-primary" disabled={disabled || added} onClick={onAdd} aria-label={`Adicionar ${name} à equipe`}>
+          {added ? '✓ Na equipe' : 'Adicionar'}
         </button>
       </div>
     </li>

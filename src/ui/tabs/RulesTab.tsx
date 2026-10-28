@@ -288,7 +288,10 @@ function Calendar() {
   const [onlyBR, setOnlyBR] = useState(false);
   const now = Date.now();
   if (!events.length) return null;
-  const rows = events.map(e => ({ e, status: eventStatus(e, now), br: /brazil|brasil/i.test(e.location ?? '') }));
+  // ordem cronológica (o JSON curado pode vir fora de ordem); sem data vai para o fim
+  const rows = events
+    .map(e => ({ e, status: eventStatus(e, now), br: /brazil|brasil/i.test(e.location ?? ''), start: looseDateRange(e.date)?.start ?? Infinity }))
+    .sort((a, b) => (a.start === b.start ? 0 : a.start - b.start));
   const nextIdx = rows.findIndex(r => r.status !== 'past');
   const visible = rows.filter(r => (showPast || r.status !== 'past') && (!onlyBR || r.br));
   const pastCount = rows.filter(r => r.status === 'past').length;
@@ -446,7 +449,7 @@ function ItemsAvailability() {
   const available = filtered.filter(r => r.ok);
   const missing = filtered.filter(r => !r.ok);
   const fresh = filtered.filter(r => r.isNew);
-  const legalCount = data.dex && Object.values(data.dex.items).filter(i => i.legal?.[regulation]).length;
+  const legalCount = Object.values(data.dex.items).filter(i => i.legal?.[regulation]).length;
   return (
     <>
       <h3>Itens na Reg {regulation}</h3>

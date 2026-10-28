@@ -2,6 +2,7 @@
  * Funções puras da interface (sem React): sprites, formatação, saneamento de
  * equipes vindas do localStorage/importação e checagens de cláusulas.
  */
+import type { SpeedEntry } from '../core/api.ts';
 import type { DexAccess } from '../core/dex.ts';
 import { toId } from '../core/id.ts';
 import { emptySP, SP_MAX, SP_TOTAL, STAT_IDS, totalSP } from '../core/stats.ts';
@@ -88,7 +89,7 @@ export function formatDate(iso: string | undefined | null): string {
  * "2026-10-31/11-01" -> "31/10–01/11/2026"; outras datas ISO no texto viram dd/mm/aaaa.
  */
 export function formatLooseDate(raw: string | undefined | null): string {
-  if (!raw) return '—';
+  if (!raw || typeof raw !== 'string') return '—';
   const s = raw.trim();
   let m = /^(\d{4})-(\d{2})-(\d{2})\/(\d{2})-(\d{2})$/.exec(s);
   if (m) return `${m[3]}/${m[2]}–${m[5]}/${m[4]}/${m[1]}`;
@@ -103,7 +104,7 @@ export function formatLooseDate(raw: string | undefined | null): string {
 
 /** Primeiro e último dia (UTC, ms) de uma data solta; null se não houver data ISO. */
 export function looseDateRange(raw: string | undefined | null): { start: number; end: number } | null {
-  if (!raw) return null;
+  if (!raw || typeof raw !== 'string') return null;
   const m = /(\d{4})-(\d{2})-(\d{2})(?:\/(\d{2})(?:-(\d{2}))?)?/.exec(raw);
   if (!m) return null;
   const start = Date.UTC(+m[1], +m[2] - 1, +m[3]);
@@ -134,6 +135,33 @@ export function relativeAge(iso: string | undefined | null, now = Date.now()): s
 export function formatNumber(n: number | null | undefined): string {
   if (n === null || n === undefined || Number.isNaN(n)) return '—';
   return n.toLocaleString('pt-BR');
+}
+
+/* ------------------------------ velocidade ----------------------------- */
+
+export type SpeedMode = 'normal' | 'tailwind' | 'trickroom';
+
+/**
+ * Linhas da lista de velocidades em cada modo. O motor já manda variantes dos
+ * membros (ex.: "sob Tailwind (×2)", habilidade de clima ×2): no modo Tailwind a
+ * interface dobra só as linhas sem Tailwind e no Trick Room usa só a velocidade
+ * base de cada membro, sem contar nada duas vezes.
+ */
+export function speedRows(entries: SpeedEntry[], mode: SpeedMode): (SpeedEntry & { eff: number })[] {
+  const base = new Map<number, number>();
+  for (const e of entries) {
+    if (e.isMeta || e.slot === undefined) continue;
+    base.set(e.slot, Math.min(base.get(e.slot) ?? Infinity, e.speed));
+  }
+  const variant = (e: SpeedEntry) => !e.isMeta && e.slot !== undefined && e.speed > (base.get(e.slot) ?? Infinity);
+  return entries
+    .filter(e => {
+      if (!variant(e)) return true;
+      if (mode === 'trickroom') return false;
+      return !/tailwind/i.test(e.label);
+    })
+    .map(e => ({ ...e, eff: !e.isMeta && mode === 'tailwind' ? e.speed * 2 : e.speed }))
+    .sort((a, b) => (mode === 'trickroom' ? a.eff - b.eff : b.eff - a.eff) || Number(a.isMeta) - Number(b.isMeta));
 }
 
 /* ------------------------------ Stat Points ---------------------------- */
@@ -203,6 +231,9 @@ export function normalizeSet(dex: DexAccess, set: PokemonSet): { set: PokemonSet
     // "Charizard-Mega-Y" vira Charizard segurando Charizardite Y
     const base = dex.baseOf(species);
     if (!out.item && species.requiredItem) out.item = species.requiredItem;
+    // a habilidade da Mega (ex.: Drought) não é escolhível na forma base
+    const baseAbilities = Object.values(base.abilities).map(toId);
+    if (out.ability && !baseAbilities.includes(toId(out.ability))) out.ability = base.abilities['0'];
     species = base;
   }
   if (species) {
@@ -231,14 +262,21 @@ export function normalizeSet(dex: DexAccess, set: PokemonSet): { set: PokemonSet
       delete out.nature;
     }
   }
-  out.moves = out.moves.map(m => {
+  const seen = new Set<string>();
+  out.moves = out.moves.flatMap(m => {
     const move = dex.move(m);
+    const id = move?.id ?? toId(m);
+    if (seen.has(id)) {
+      warnings.push(`Golpe repetido removido: ${move?.name ?? m}.`);
+      return [];
+    }
+    seen.add(id);
     if (!move) {
       warnings.push(`Golpe desconhecido: ${m}.`);
-      return m;
+      return [m];
     }
     if (species && !dex.canLearn(species, move.id)) warnings.push(`${species.name} não aprende ${move.name} no Champions.`);
-    return move.name;
+    return [move.name];
   });
   return { set: out, warnings };
 }
@@ -249,6 +287,30 @@ export function tournamentMemberToSet(member: TournamentTeamMember): PokemonSet 
   if (member.ability) set.ability = member.ability;
   if (member.nature) set.nature = member.nature;
   return set;
+}
+
+/** Golpes do set que a espécie não aprende no Champions (ou que não existem). */
+export function illegalMoves(dex: DexAccess, set: PokemonSet): string[] {
+  const species = dex.species(set.species);
+  if (!species) return [];
+  return set.moves.filter(m => m && !dex.canLearn(species, dex.move(m)?.id ?? m)).map(m => dex.move(m)?.name ?? m);
+}
+
+/** Golpes repetidos no set. */
+export function repeatedMoves(dex: DexAccess, set: PokemonSet): string[] {
+  const seen = new Set<string>();
+  const reported = new Set<string>();
+  const out: string[] = [];
+  for (const m of set.moves) {
+    const id = dex.move(m)?.id ?? toId(m);
+    if (!id) continue;
+    if (seen.has(id) && !reported.has(id)) {
+      reported.add(id);
+      out.push(dex.move(m)?.name ?? m);
+    }
+    seen.add(id);
+  }
+  return out;
 }
 
 /* ------------------------------- cláusulas ----------------------------- */

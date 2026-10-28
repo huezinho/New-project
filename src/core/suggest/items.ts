@@ -4,6 +4,7 @@
  * membro fica bloqueado), só itens legais e Mega Stones da própria espécie.
  */
 import type { EngineContext, ItemSuggestion } from '../api.ts';
+import { detectArchetypes } from '../analysis.ts';
 import { TYPE_PT } from '../i18n.ts';
 import { calcStat } from '../stats.ts';
 import { defenseMult, isDamaging, megaOptions, metaThreats, type Member } from '../team.ts';
@@ -63,9 +64,10 @@ function megaEval(ctx: EngineContext, sc: SlotContext, item: ItemData, f: Member
   const ability = ctx.dex.ability(form.abilities['0']);
   const stat = form.baseStats.atk >= form.baseStats.spa ? `Ataque base ${form.baseStats.atk}` : `At. Esp. base ${form.baseStats.spa}`;
   reasons.push(`Mega Evolui em ${form.name} (${form.types.map(t => TYPE_PT[t]).join('/')}, ${ability?.name ?? form.abilities['0']}, ${stat}).`);
-  // Mega física com golpes especiais (ou o contrário) rende menos.
-  const megaPhysical = form.baseStats.atk >= form.baseStats.spa;
-  if (f.damaging.length && ((megaPhysical && !f.physical) || (!megaPhysical && !f.special))) {
+  // Mega física com golpes especiais (ou o contrário) rende menos; Megas mistas não são penalizadas.
+  const megaPhysical = form.baseStats.atk > form.baseStats.spa * 1.1;
+  const megaSpecial = form.baseStats.spa > form.baseStats.atk * 1.1;
+  if (f.damaging.length && ((megaPhysical && !f.physical) || (megaSpecial && !f.special))) {
     value -= 0.3;
     reasons.push('A Mega favorece a outra categoria de ataque do set atual.');
   }
@@ -74,7 +76,8 @@ function megaEval(ctx: EngineContext, sc: SlotContext, item: ItemData, f: Member
   const weatherAbility: Record<string, string> = { drought: 'sun', drizzle: 'rain', sandstream: 'sand', snowwarning: 'snow' };
   const arch = weatherAbility[ability?.id ?? ''];
   if (arch) {
-    const mode = modeArchetypes(sc.archetypes).find(a => ['sun', 'rain', 'sand', 'snow'].includes(a.def.id));
+    // Clima dos parceiros (o do próprio membro é justamente o que está em escolha).
+    const mode = modeArchetypes(detectArchetypes(ctx, sc.others)).find(a => ['sun', 'rain', 'sand', 'snow'].includes(a.def.id));
     if (mode && mode.def.id === arch) value += 0.15;
     else if (mode) {
       value -= 0.3;
@@ -93,7 +96,8 @@ function contextEval(ctx: EngineContext, sc: SlotContext, item: ItemData, f: Mem
   const hint = ctx.heuristics.itemHeuristics?.find(h => h.item === id)?.whenPt;
   const moves = m.moves;
   const moveIds = m.moveIds;
-  const trick = archetypeById(modeArchetypes(sc.archetypes), 'trickroom');
+  // Equipe inteira: o Trick Room do próprio membro também conta.
+  const trick = archetypeById(modeArchetypes(sc.state.archetypes), 'trickroom');
   let value = 0.04;
   const say = (text: string | undefined) => {
     if (text) reasons.push(text);

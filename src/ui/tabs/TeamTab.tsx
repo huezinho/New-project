@@ -7,7 +7,7 @@ import { Notice } from '../components/common.tsx';
 import { Sprite } from '../components/Sprite.tsx';
 import { TypeList } from '../components/TypeBadge.tsx';
 import { useApp } from '../state.tsx';
-import { isMegaStone, itemClauseConflicts, MAX_TEAM, megaStoneCount, speciesClauseConflicts } from '../util.ts';
+import { illegalMoves, isMegaStone, itemClauseConflicts, MAX_TEAM, megaStoneCount, repeatedMoves, speciesClauseConflicts } from '../util.ts';
 import { SetEditor } from './SetEditor.tsx';
 import { SuggestionsPanel } from './SuggestionsPanel.tsx';
 
@@ -117,6 +117,13 @@ function TeamSlots() {
           const species = dex.species(set.species);
           if (species && !dex.isLegal(species)) warnings.push(`Ilegal na Reg ${dex.regulation}`);
           if (!species) warnings.push('Espécie desconhecida');
+          const item = dex.item(set.item);
+          if (set.item && !item) warnings.push(`Item desconhecido: ${set.item}`);
+          else if (item && !item.legal[dex.regulation]) warnings.push(`Item indisponível na Reg ${dex.regulation}: ${item.name}`);
+          const badMoves = illegalMoves(dex, set);
+          if (badMoves.length) warnings.push(`Golpe ilegal: ${badMoves.join(', ')}`);
+          const repeated = repeatedMoves(dex, set);
+          if (repeated.length) warnings.push(`Golpe repetido: ${repeated.join(', ')}`);
           if (set.moves.filter(Boolean).length < 4) warnings.push(`${set.moves.filter(Boolean).length}/4 golpes`);
           return (
             <SlotCard
@@ -150,7 +157,7 @@ function SlotCard({ set, index, selected, warnings, onSelect, onRemove }: {
   const isMega = !!form?.isMega;
   const ability = dex.battleAbility(set);
   const item = dex.item(set.item);
-  const severe = warnings.some(w => /Clause|Ilegal|desconhecida/.test(w));
+  const severe = warnings.some(w => /Clause|ilegal|desconhecid|indisponível|repetido/i.test(w));
   return (
     <div className={`slot${selected ? ' selected' : ''}${severe ? ' has-error' : ''}`}>
       <button type="button" className="slot-main" onClick={onSelect} aria-pressed={selected} aria-label={`Editar ${set.species} (slot ${index + 1})`}>
@@ -172,10 +179,10 @@ function SlotCard({ set, index, selected, warnings, onSelect, onRemove }: {
           <span className="muted">Hab.:</span> {ability ?? <em className="muted">—</em>}
         </span>
         <span className="slot-moves">
-          {set.moves.filter(Boolean).map(m => {
+          {set.moves.filter(Boolean).map((m, i) => {
             const mv = dex.move(m);
             return (
-              <span key={m} className="move-chip" style={mv ? { borderLeftColor: TYPE_COLORS[mv.type] } : undefined}>
+              <span key={`${i}-${m}`} className="move-chip" style={mv ? { borderLeftColor: TYPE_COLORS[mv.type] } : undefined}>
                 {mv?.name ?? m}
               </span>
             );

@@ -230,7 +230,7 @@
       "setters": { "moves": ["trickroom"], "abilities": [] },
       "abusers": { "abilities": [], "traits": ["basespe<=60&attack>=90", "!basespe>=100"] },
       "speedProfile": "slow",
-      "antiSynergyMoves": ["tailwind", "icywind", "electroweb", "bulldoze", "rocktomb", "scaryface", "stringshot", "cottonspore", "agility", "rockpolish", "mudshot", "lowsweep", "drumbeating", "pounce", "toxicthread", "syrupbomb"],
+      "antiSynergyMoves": ["tailwind", "icywind", "electroweb", "bulldoze", "rocktomb", "scaryface", "stringshot", "cottonspore", "agility", "rockpolish", "mudshot", "lowsweep", "drumbeating", "pounce", "toxicthread", "syrupbomb", "dragondance", "quiverdance", "shiftgear", "flamecharge"],
       "description": "Inverte a ordem de velocidade por 5 turnos: os mais lentos agem primeiro. Precisa de setter protegido (Fake Out, redirecionamento) e atacantes lentos e fortes, com 0 SP de Velocidade e natureza −Spe."
     },
     {
@@ -365,7 +365,7 @@
     { "id": "threat-coverage", "descriptionPt": "Super efetivo contra ameaças do meta que pressionam a equipe.", "rule": "score += peso × perigo da ameaça", "weight": 0.25 },
     { "id": "spread-doubles", "descriptionPt": "Ataque em área: ×0,75 de dano, mas acerta os dois oponentes.", "rule": "poder efetivo × peso", "weight": 1.2 },
     { "id": "ally-hit", "descriptionPt": "Golpe em área que acerta o parceiro (Earthquake, Surf, Discharge, Explosion) sem parceiro imune.", "rule": "score -= peso × fração de parceiros não imunes", "weight": 0.4 },
-    { "id": "archetype-conflict", "descriptionPt": "Conflita com o modo da equipe (Tailwind em Trick Room, clima oposto...).", "rule": "score -= peso × confiança do arquétipo", "weight": 0.9 },
+    { "id": "archetype-conflict", "descriptionPt": "Conflita com o modo da equipe (Tailwind em Trick Room, clima oposto...).", "rule": "score -= peso × confiança do arquétipo", "weight": 1.3 },
     { "id": "archetype-setter", "descriptionPt": "Ativa o modo da equipe (setter extra de Trick Room, clima, terreno).", "rule": "score += peso × confiança do arquétipo", "weight": 0.25 },
     { "id": "protect-baseline", "descriptionPt": "Protect é básico em VGC (exceto com Choice Scarf).", "rule": "intrínseco = peso", "weight": 0.55 },
     { "id": "choice-status", "descriptionPt": "Com Choice Scarf o Pokémon fica preso no golpe: status quase nunca vale a pena.", "rule": "score -= peso", "weight": 0.8 },

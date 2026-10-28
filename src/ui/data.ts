@@ -4,7 +4,9 @@
  * ausentes são tolerados).
  */
 import type { Heuristics } from '../core/api.ts';
-import type { Dex, Meta } from '../core/types.ts';
+import type {
+  Dex, Meta, MetaArchetype, MetaPokemon, MetaSource, Share, StatsTable, TournamentEvent, TournamentTeam, TournamentTeamMember,
+} from '../core/types.ts';
 
 export interface PatchChange {
   kind?: string;
@@ -131,6 +133,7 @@ async function fetchJson(file: string): Promise<unknown> {
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const arr = <T>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
+const str = (v: unknown): string | undefined => (typeof v === 'string' && v.trim() ? v : undefined);
 
 function checkDex(v: unknown): Dex {
   if (!isObj(v) || !isObj(v.species) || !isObj(v.moves) || !isObj(v.items) || !isObj(v.typechart)) throw new Error('formato inesperado');
@@ -138,21 +141,112 @@ function checkDex(v: unknown): Dex {
   return { ...dex, formats: arr(dex.formats), changes: arr(dex.changes), natures: dex.natures ?? {}, abilities: dex.abilities ?? {} };
 }
 
-function checkMeta(v: unknown): Meta {
+const num = (v: unknown, fallback = 0): number => (typeof v === 'number' && Number.isFinite(v) ? v : fallback);
+const numOrNull = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+const strList = (v: unknown): string[] => arr(v).filter((s): s is string => typeof s === 'string' && !!s);
+
+/** Lista de { id, name, share } sem entradas quebradas. */
+function shares<T extends Share>(v: unknown): T[] {
+  return arr<Record<string, unknown>>(v)
+    .filter(s => isObj(s) && typeof s.id === 'string' && !!s.id)
+    .map(s => ({ ...s, id: s.id as string, name: typeof s.name === 'string' && s.name ? s.name : (s.id as string), share: num(s.share) }) as unknown as T);
+}
+
+function checkMetaPokemon(key: string, v: unknown, index: number): MetaPokemon | null {
+  if (!isObj(v)) return null;
+  const id = str(v.id) ?? key;
+  const trend = isObj(v.trend) && Number.isFinite(v.trend.recent) && Number.isFinite(v.trend.previous)
+    ? { recent: v.trend.recent as number, previous: v.trend.previous as number }
+    : null;
+  return {
+    ...(v as unknown as MetaPokemon),
+    id,
+    name: str(v.name) ?? id,
+    usage: num(v.usage),
+    rank: num(v.rank, index + 1),
+    winRate: numOrNull(v.winRate),
+    games: num(v.games),
+    rawWinRate: numOrNull(v.rawWinRate),
+    topCutRate: numOrNull(v.topCutRate),
+    moves: shares(v.moves),
+    items: shares(v.items),
+    abilities: shares(v.abilities),
+    spreads: arr<Record<string, unknown>>(v.spreads)
+      .filter(s => isObj(s) && typeof s.nature === 'string' && isObj(s.sp))
+      .map(s => ({ nature: s.nature as string, sp: s.sp as unknown as StatsTable, share: num(s.share) })),
+    teammates: shares(v.teammates),
+    trend,
+    sources: strList(v.sources),
+  };
+}
+
+function checkEvent(v: unknown): TournamentEvent | null {
+  if (!isObj(v)) return null;
+  const id = str(v.id) ?? str(v.name);
+  if (!id) return null;
+  const teams = arr<Record<string, unknown>>(v.teams)
+    .filter(isObj)
+    .map(t => ({
+      ...(t as unknown as TournamentTeam),
+      player: str(t.player) ?? '—',
+      placing: numOrNull(t.placing),
+      record: isObj(t.record) ? { wins: num(t.record.wins), losses: num(t.record.losses), ties: num(t.record.ties) } : null,
+      pokemon: arr<Record<string, unknown>>(t.pokemon)
+        .filter(p => isObj(p) && typeof p.species === 'string' && !!p.species)
+        .map(p => ({ ...(p as unknown as TournamentTeamMember), moves: strList(p.moves) })),
+    }));
+  return {
+    ...(v as unknown as TournamentEvent),
+    id,
+    name: str(v.name) ?? id,
+    date: str(v.date) ?? '',
+    regulation: str(v.regulation) ?? '',
+    game: str(v.game) ?? 'Champions',
+    tier: str(v.tier) ?? 'online',
+    players: numOrNull(v.players),
+    teams,
+  };
+}
+
+/** Valida meta.json campo a campo (entradas quebradas são descartadas ou completadas). */
+export function checkMeta(v: unknown): Meta {
   if (!isObj(v)) throw new Error('formato inesperado');
   const m = v as unknown as Partial<Meta>;
+  const pokemon: Meta['pokemon'] = {};
+  if (isObj(m.pokemon)) {
+    Object.entries(m.pokemon).forEach(([key, p], i) => {
+      const clean = checkMetaPokemon(key, p, i);
+      if (clean) pokemon[key] = clean;
+    });
+  }
   return {
-    version: m.version ?? 1,
-    generatedAt: m.generatedAt ?? '',
-    regulation: m.regulation ?? '',
-    formatId: m.formatId ?? '',
-    halfLifeDays: m.halfLifeDays ?? 60,
-    sources: arr(m.sources),
-    pokemon: isObj(m.pokemon) ? (m.pokemon as Meta['pokemon']) : {},
-    cores: arr(m.cores),
-    archetypes: arr(m.archetypes),
-    events: arr<Meta['events'][number]>(m.events).map(e => ({ ...e, teams: arr(e.teams) })),
-    notes: arr(m.notes),
+    version: num(m.version, 1),
+    generatedAt: str(m.generatedAt) ?? '',
+    regulation: str(m.regulation) ?? '',
+    formatId: str(m.formatId) ?? '',
+    halfLifeDays: num(m.halfLifeDays, 60),
+    sources: arr<Record<string, unknown>>(m.sources)
+      .filter(s => isObj(s) && typeof s.label === 'string')
+      .map(s => ({ ...(s as unknown as MetaSource), id: str(s.id) ?? (s.label as string), kind: (str(s.kind) ?? 'usage') as MetaSource['kind'], regulation: str(s.regulation) ?? '', samples: num(s.samples), weight: num(s.weight), fetchedAt: str(s.fetchedAt) ?? '' })),
+    pokemon,
+    cores: arr<Record<string, unknown>>(m.cores)
+      .filter(c => isObj(c) && strList(c.members).length > 0)
+      .map(c => ({ members: strList(c.members), usage: num(c.usage), winRate: numOrNull(c.winRate), games: num(c.games) })),
+    archetypes: arr<Record<string, unknown>>(m.archetypes)
+      .filter(a => isObj(a) && (typeof a.id === 'string' || typeof a.name === 'string'))
+      .map(a => ({
+        ...(a as unknown as MetaArchetype),
+        id: str(a.id) ?? (a.name as string),
+        name: str(a.name) ?? (a.id as string),
+        namePt: str(a.namePt) ?? str(a.name) ?? (a.id as string),
+        keyMembers: strList(a.keyMembers),
+        share: numOrNull(a.share),
+        description: str(a.description) ?? '',
+        winRate: numOrNull(a.winRate),
+        games: numOrNull(a.games),
+      })),
+    events: arr(m.events).map(checkEvent).filter((e): e is TournamentEvent => !!e),
+    notes: strList(m.notes),
   };
 }
 
@@ -171,40 +265,102 @@ function checkHeuristics(v: unknown): Heuristics {
   };
 }
 
-const str = (v: unknown): string | undefined => (typeof v === 'string' && v.trim() ? v : undefined);
+const bool = (v: unknown): boolean | undefined => (typeof v === 'boolean' ? v : undefined);
+const textOrList = (v: unknown): string | string[] | undefined => (typeof v === 'string' ? v : Array.isArray(v) ? strList(v) : undefined);
+const objList = (v: unknown): Record<string, unknown>[] => arr<Record<string, unknown>>(v).filter(isObj);
 
-function checkPatches(v: unknown): PatchesFile | null {
-  if (!isObj(v)) return null;
+function checkChange(v: Record<string, unknown>): PatchChange {
   return {
-    meta: isObj(v.meta) ? (v.meta as PatchesFile['meta']) : null,
-    versions: arr<PatchVersion>(v.versions).filter(isObj),
-    championsVsSV: arr(v.championsVsSV),
-    unavailableButDataChanged: arr<PatchChange>(v.unavailableButDataChanged).filter(isObj),
-    simulatorFixes: arr<SimulatorFix>(v.simulatorFixes).filter(isObj),
-    gaps: arr(v.gaps).filter((g): g is string => typeof g === 'string'),
+    ...v,
+    kind: str(v.kind), name: str(v.name), id: str(v.id), field: str(v.field), from: v.from, to: v.to,
+    direction: str(v.direction), notePt: str(v.notePt), source: str(v.source),
   };
 }
 
-function checkRegulations(v: unknown): RegulationsFile | null {
+const sourceList = (v: unknown): PatchVersion['sources'] =>
+  arr(v)
+    .filter(s => typeof s === 'string' || isObj(s))
+    .map(s => (typeof s === 'string' ? s : { label: str((s as Record<string, unknown>).label), url: str((s as Record<string, unknown>).url) }));
+
+/** Valida patches.json (curado): campos com tipo errado viram ausentes em vez de quebrar a aba. */
+export function checkPatches(v: unknown): PatchesFile | null {
+  if (!isObj(v)) return null;
+  const meta = isObj(v.meta) ? v.meta : null;
+  return {
+    meta: meta
+      ? {
+          generatedAt: str(meta.generatedAt), showdownCommit: str(meta.showdownCommit), currentRegulation: str(meta.currentRegulation),
+          currentGameVersion: str(meta.currentGameVersion), ppFormula: str(meta.ppFormula), notePt: str(meta.notePt),
+        }
+      : null,
+    versions: objList(v.versions).map(p => ({
+      ...p,
+      version: str(p.version) ?? (typeof p.version === 'number' ? String(p.version) : undefined),
+      date: str(p.date),
+      regulation: str(p.regulation),
+      sources: sourceList(p.sources),
+      changes: objList(p.changes).map(checkChange),
+      notesPt: textOrList(p.notesPt),
+    })),
+    championsVsSV: objList(v.championsVsSV).filter(c => !!str(c.name) || !!str(c.notePt)).map(checkChange),
+    unavailableButDataChanged: objList(v.unavailableButDataChanged).map(checkChange),
+    simulatorFixes: objList(v.simulatorFixes).map(f => ({ commit: str(f.commit), date: str(f.date), notePt: str(f.notePt), source: str(f.source) })),
+    gaps: strList(v.gaps),
+  };
+}
+
+/** Valida regulations.json (curado) com a mesma tolerância. */
+export function checkRegulations(v: unknown): RegulationsFile | null {
   if (!isObj(v)) return null;
   // legalityDiffMBtoMC, legalityDiffMAtoMB...
   const legalityDiffs: RegulationsFile['legalityDiffs'] = [];
   for (const [key, val] of Object.entries(v)) {
     const m = /^legalityDiff([A-Z]{1,2})([A-Z]{1,2})to([A-Z]{1,2})([A-Z]{1,2})$/.exec(key);
-    if (m && isObj(val)) legalityDiffs.push({ from: `${m[1]}-${m[2]}`, to: `${m[3]}-${m[4]}`, diff: val as LegalityDiff });
+    if (m && isObj(val)) {
+      legalityDiffs.push({
+        from: `${m[1]}-${m[2]}`,
+        to: `${m[3]}-${m[4]}`,
+        diff: { added: strList(val.added), removed: strList(val.removed), addedMegas: strList(val.addedMegas) },
+      });
+    }
   }
   legalityDiffs.sort((a, b) => b.to.localeCompare(a.to));
   const game = isObj(v.game) ? v.game : null;
-  const versions = game ? arr<{ version?: string }>(game.gameVersions) : [];
+  const versions = game ? objList(game.gameVersions) : [];
+  const win = isObj(v.currentRegulationWindow) ? v.currentRegulationWindow : null;
+  const next = isObj(v.nextRegulation) ? v.nextRegulation : null;
   return {
     currentRegulation: str(v.currentRegulation),
     generatedAt: str(v.generatedAt),
-    currentRegulationWindow: isObj(v.currentRegulationWindow) ? (v.currentRegulationWindow as RegulationsFile['currentRegulationWindow']) : null,
-    nextRegulation: isObj(v.nextRegulation) ? (v.nextRegulation as RegulationsFile['nextRegulation']) : null,
-    regulations: arr<RegulationInfo>(v.regulations).filter(isObj),
-    season2027: arr<SeasonEvent>(v.season2027).filter(isObj),
-    battleRules: isObj(v.battleRules) ? v.battleRules : null,
-    itemsAvailability: arr<ItemAvailability>(v.itemsAvailability).filter(i => isObj(i) && typeof i.item === 'string'),
+    currentRegulationWindow: win ? { start: str(win.start), end: str(win.end), source: str(win.source) } : null,
+    nextRegulation: next
+      ? { id: str(next.id) ?? null, announced: bool(next.announced), expectedStart: str(next.expectedStart), sources: strList(next.sources) }
+      : null,
+    regulations: objList(v.regulations).map(r => ({
+      ...r,
+      id: str(r.id),
+      name: str(r.name),
+      start: str(r.start),
+      end: str(r.end) ?? null,
+      notes: textOrList(r.notes),
+      rankedSeasons: objList(r.rankedSeasons).map(s => ({ season: str(s.season) ?? (typeof s.season === 'number' ? String(s.season) : undefined), start: str(s.start) ?? null, end: str(s.end) ?? null })),
+      events: objList(r.events).map(e => ({ event: str(e.event), date: str(e.date) })),
+      showdownFormatId: str(r.showdownFormatId),
+      sources: strList(r.sources),
+    })),
+    season2027: objList(v.season2027).map(e => ({
+      event: str(e.event), location: str(e.location), date: str(e.date), regulation: str(e.regulation), status: str(e.status), source: str(e.source),
+    })),
+    battleRules: isObj(v.battleRules)
+      ? {
+          ...v.battleRules,
+          clauses: objList(v.battleRules.clauses).filter(c => !!str(c.clause)).map(c => ({ clause: str(c.clause), source: str(c.source) })),
+          sources: strList(v.battleRules.sources),
+        }
+      : null,
+    itemsAvailability: objList(v.itemsAvailability)
+      .filter(i => typeof i.item === 'string' && !!i.item)
+      .map(i => ({ item: i.item as string, available: bool(i.available), availableMB: bool(i.availableMB), availableMA: bool(i.availableMA) })),
     legalityDiffs,
     gameVersion: versions.length ? str(versions[versions.length - 1]?.version) : undefined,
   };

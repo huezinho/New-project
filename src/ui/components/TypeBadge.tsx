@@ -1,13 +1,22 @@
 import { TYPE_COLORS, TYPE_PT } from '../../core/i18n.ts';
 import type { TypeName } from '../../core/types.ts';
 
-/** Luminância relativa aproximada para escolher texto claro/escuro. */
-function isLight(hex: string): boolean {
+const DARK_TEXT = '#0f1420';
+
+/** Luminância relativa (WCAG) de uma cor #rrggbb. */
+function luminance(hex: string): number {
   const n = parseInt(hex.replace('#', ''), 16);
-  const r = (n >> 16) & 255;
-  const g = (n >> 8) & 255;
-  const b = n & 255;
-  return 0.299 * r + 0.587 * g + 0.114 * b > 170;
+  const ch = (v: number) => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * ch((n >> 16) & 255) + 0.7152 * ch((n >> 8) & 255) + 0.0722 * ch(n & 255);
+}
+
+/** true quando texto escuro contrasta mais que branco com o fundo (ex.: Gelo, Elétrico, Lutador). */
+function isLight(hex: string): boolean {
+  const l = luminance(hex);
+  return (l + 0.05) / (luminance(DARK_TEXT) + 0.05) > 1.05 / (l + 0.05);
 }
 
 export function TypeBadge({ type, small = false }: { type: TypeName; small?: boolean }) {

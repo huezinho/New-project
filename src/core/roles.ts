@@ -6,7 +6,7 @@
 import type { EngineContext, RoleDef } from './api.ts';
 import { toId } from './id.ts';
 import { baseAttack, baseBulk, defaultAbility, isDamaging, megaOptions, metaOf, resolveMember, type Member } from './team.ts';
-import { memo } from './util.ts';
+import { lowerFirst, memo } from './util.ts';
 import type { MoveData, PokemonSet, SpeciesData, TypeName } from './types.ts';
 
 export interface RoleHit {
@@ -93,37 +93,70 @@ export interface TraitSubject {
   moves: { has(id: string): boolean };
 }
 
-/** Avalia um traço ("type:Fire&attack>=90", "basespe<=60", "move:weatherball"). Sem o prefixo "!". */
-export function matchTrait(trait: string, subj: TraitSubject): boolean {
-  const clean = trait.replace(/^!/, '');
-  if (!clean) return false;
-  return clean.split('&').every(part => {
+type TraitPart =
+  | { kind: 'type' | 'move' | 'ability'; value: string }
+  | { kind: 'stat'; stat: string; op: string; n: number }
+  | { kind: 'never' };
+
+// Traços vêm do heuristics.json (conjunto pequeno): compilados uma vez.
+const compiled = new Map<string, TraitPart[]>();
+
+function compileTrait(clean: string): TraitPart[] {
+  let parts = compiled.get(clean);
+  if (parts) return parts;
+  parts = clean.split('&').map((part): TraitPart => {
     const p = part.trim();
     const colon = p.indexOf(':');
     if (colon > 0) {
       const key = p.slice(0, colon);
       const value = p.slice(colon + 1);
-      if (key === 'type') return subj.types.includes(value as TypeName);
-      if (key === 'move') return subj.moves.has(toId(value));
-      if (key === 'ability') return toId(subj.ability) === toId(value);
-      return false;
+      if (key === 'type') return { kind: 'type', value };
+      if (key === 'move' || key === 'ability') return { kind: key, value: toId(value) };
+      return { kind: 'never' };
     }
     const m = /^([a-z]+)\s*(<=|>=|<|>|=)\s*(\d+(?:\.\d+)?)$/.exec(p);
-    if (!m) return false;
-    const b = subj.species.baseStats;
-    const stats: Record<string, number> = {
-      basespe: b.spe, hp: b.hp, atk: b.atk, def: b.def, spa: b.spa, spd: b.spd,
-      attack: baseAttack(subj.species, toId(subj.ability)), bulk: baseBulk(subj.species),
-    };
-    const v = stats[m[1]];
-    if (v === undefined) return false;
-    const n = Number(m[3]);
-    switch (m[2]) {
-      case '<=': return v <= n;
-      case '>=': return v >= n;
-      case '<': return v < n;
-      case '>': return v > n;
-      default: return v === n;
+    return m ? { kind: 'stat', stat: m[1], op: m[2], n: Number(m[3]) } : { kind: 'never' };
+  });
+  compiled.set(clean, parts);
+  return parts;
+}
+
+function statOf(subj: TraitSubject, stat: string): number | undefined {
+  const b = subj.species.baseStats;
+  switch (stat) {
+    case 'basespe': return b.spe;
+    case 'hp': return b.hp;
+    case 'atk': return b.atk;
+    case 'def': return b.def;
+    case 'spa': return b.spa;
+    case 'spd': return b.spd;
+    case 'attack': return baseAttack(subj.species, toId(subj.ability));
+    case 'bulk': return baseBulk(subj.species);
+    default: return undefined;
+  }
+}
+
+/** Avalia um traço ("type:Fire&attack>=90", "basespe<=60", "move:weatherball"). Sem o prefixo "!". */
+export function matchTrait(trait: string, subj: TraitSubject): boolean {
+  const clean = trait.startsWith('!') ? trait.slice(1) : trait;
+  if (!clean) return false;
+  return compileTrait(clean).every(p => {
+    switch (p.kind) {
+      case 'type': return subj.types.includes(p.value as TypeName);
+      case 'move': return subj.moves.has(p.value);
+      case 'ability': return toId(subj.ability) === p.value;
+      case 'never': return false;
+      default: {
+        const v = statOf(subj, p.stat);
+        if (v === undefined) return false;
+        switch (p.op) {
+          case '<=': return v <= p.n;
+          case '>=': return v >= p.n;
+          case '<': return v < p.n;
+          case '>': return v > p.n;
+          default: return v === p.n;
+        }
+      }
     }
   });
 }
@@ -204,4 +237,32 @@ export function speciesPotential(ctx: EngineContext, species: SpeciesData): Role
 /** Força (0-1) do potencial de uma espécie num papel. */
 export function potentialStrength(ctx: EngineContext, species: SpeciesData, roleId: string): number {
   return speciesPotential(ctx, species).get(roleId)?.strength ?? 0;
+}
+
+/* ------------------------------ textos ------------------------------ */
+
+const ROLE_PHRASE: Record<string, string> = {
+  speedcontrol: 'controle de velocidade',
+  fakeout: 'Fake Out',
+  intimidate: 'Intimidate ou redução de ataque',
+  redirection: 'redirecionamento',
+  spread: 'ataques em área',
+  disruption: 'disrupção',
+  support: 'suporte ao parceiro',
+  pivot: 'pivô',
+  priority: 'golpes de prioridade',
+  teamprotect: 'proteção da dupla',
+  screens: 'telas',
+  setup: 'setup',
+  antiintimidate: 'resposta a Intimidate',
+  weather: 'clima',
+  terrain: 'terreno',
+  trapping: 'quem prenda o oponente',
+  trickroomattacker: 'atacante de Trick Room',
+  protect: 'Protect',
+};
+
+/** Nome do papel para usar no meio de uma frase ("sua equipe não tem ..."). */
+export function rolePhrase(role: RoleDef): string {
+  return ROLE_PHRASE[role.id] ?? lowerFirst(role.namePt);
 }

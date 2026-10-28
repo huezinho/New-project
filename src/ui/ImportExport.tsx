@@ -1,6 +1,6 @@
 /** Modal de importação/exportação no formato de texto do Pokémon Showdown. */
 import { useMemo, useRef, useState } from 'react';
-import { exportTeam, parseTeam } from '../core/paste.ts';
+import { exportTeam, parseSet, parseTeam } from '../core/paste.ts';
 import { Modal, Notice } from './components/common.tsx';
 import { useApp } from './state.tsx';
 import { normalizeSet } from './util.ts';
@@ -27,6 +27,11 @@ export function ImportExportModal({ onClose, initialMode = 'import' }: { onClose
     if (!text.trim()) return { sets: [], warnings: [] as string[] };
     const sets = parseTeam(text);
     const warnings: string[] = [];
+    // parseTeam guarda só os 6 primeiros: avisa o que ficou de fora
+    const all = text.replace(/\r\n?/g, '\n').split(/\n\s*\n/).map(parseSet).filter(s => !!s);
+    if (all.length > sets.length) {
+      warnings.push(`O texto tem ${all.length} Pokémon; só os ${sets.length} primeiros entram (equipe de 6). Ficaram de fora: ${all.slice(sets.length).map(s => s!.species).join(', ')}.`);
+    }
     const out = sets.map(s => {
       const r = normalizeSet(dex, s);
       warnings.push(...r.warnings);

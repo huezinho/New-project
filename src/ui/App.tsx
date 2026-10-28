@@ -1,5 +1,6 @@
 /** Casca do app: carregamento dos dados, cabeçalho, abas e rodapé. */
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { ErrorBoundary } from './components/common.tsx';
 import { DataLoadError, loadAppData, type AppData } from './data.ts';
 import { useHashTab } from './hooks.ts';
 import { ImportExportModal } from './ImportExport.tsx';
@@ -126,11 +127,13 @@ function Shell() {
         </div>
       </nav>
       <main id="conteudo" className="content" role="tabpanel" aria-labelledby={`tab-${tab}`} tabIndex={-1}>
-        {tab === 'equipe' && <TeamTab />}
-        {tab === 'analise' && <AnalysisTab />}
-        {tab === 'meta' && <MetaTab />}
-        {tab === 'regras' && <RulesTab />}
-        {tab === 'fontes' && <SourcesTab />}
+        <ErrorBoundary resetKey={tab} what={`A aba ${TAB_LABEL[tab]}`}>
+          {tab === 'equipe' && <TeamTab />}
+          {tab === 'analise' && <AnalysisTab />}
+          {tab === 'meta' && <MetaTab />}
+          {tab === 'regras' && <RulesTab />}
+          {tab === 'fontes' && <SourcesTab />}
+        </ErrorBoundary>
       </main>
       <footer className="footer">
         <p>

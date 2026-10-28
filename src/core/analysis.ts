@@ -7,13 +7,13 @@ import type {
 } from './api.ts';
 import { TYPE_PT } from './i18n.ts';
 import { toId } from './id.ts';
-import { allRoles, matchTrait, memberRoles, type RoleMap, type TraitSubject } from './roles.ts';
+import { allRoles, matchTrait, memberRoles, roleById, rolePhrase, type RoleMap, type TraitSubject } from './roles.ts';
 import { SP_TOTAL, totalSP, validateSP } from './stats.ts';
 import {
   bestHit, defenseMult, hasMetaData, isDamaging, isMegaStone, maxSpeed, metaThreats, moveTypeFor, PROTECT_MOVES,
   resolveTeam, type FieldState, type Member, type Terrain, type ThreatProfile, type Weather,
 } from './team.ts';
-import { effectivenessWithAbility, TYPES, typeEffectiveness } from './typechart.ts';
+import { effectivenessWithAbility, MOLD_BREAKERS, TYPES, typeEffectiveness } from './typechart.ts';
 import { clamp01, listPt, memo, pctPt } from './util.ts';
 import type { Team, TypeName } from './types.ts';
 
@@ -22,6 +22,22 @@ export const ARCHETYPE_TERRAIN: Record<string, Terrain> = { psychicterrain: 'Psy
 const GENERIC_ARCHETYPES = new Set(['balance', 'hyperoffense']);
 /** Habilidades que dobram a velocidade em um clima. */
 const WEATHER_SPEED: Record<string, Weather> = { chlorophyll: 'Sun', swiftswim: 'Rain', sandrush: 'Sand', slushrush: 'Snow' };
+const WEATHER_NAME_PT: Record<Weather, string> = { Sun: 'sol', Rain: 'chuva', Sand: 'areia', Snow: 'neve' };
+
+/**
+ * Swift Swim/Chlorophyll/Sand Rush/Slush Rush com o clima da equipe (e Surge
+ * Surfer com Electric Terrain) dobram a Velocidade: é controle de velocidade.
+ */
+export function addFieldSpeedRole(ctx: EngineContext, member: Member, roles: RoleMap, field: FieldState): void {
+  if (!member.form || roles.has('speedcontrol')) return;
+  const role = roleById(ctx, 'speedcontrol');
+  if (!role) return;
+  const weather = WEATHER_SPEED[member.ability];
+  let via: string | undefined;
+  if (weather && field.weather === weather) via = `${member.abilityName} (${WEATHER_NAME_PT[weather]})`;
+  else if (member.ability === 'surgesurfer' && field.terrain === 'Electric') via = `${member.abilityName} (Electric Terrain)`;
+  if (via) roles.set('speedcontrol', { role, via: [via], strength: 0.8 });
+}
 
 export interface ArchetypeHit {
   def: ArchetypeDef;
@@ -168,7 +184,7 @@ export function coverageRows(ctx: EngineContext, members: Member[], field: Field
 
 /** Papéis que contam para "papéis faltando" (escopo de equipe e peso relevante). */
 export function coreRoles(ctx: EngineContext): RoleDef[] {
-  return allRoles(ctx).filter(r => r.scope !== 'member' && r.weight >= 0.25);
+  return memo(ctx, 'coreRoles', () => allRoles(ctx).filter(r => r.scope !== 'member' && r.weight >= 0.25));
 }
 
 export function roleCoverage(ctx: EngineContext, members: Member[], roles: RoleMap[]): { coverage: RoleCoverage[]; missing: RoleDef[] } {
@@ -239,15 +255,23 @@ export function threatEntries(ctx: EngineContext, members: Member[], field: Fiel
   const maxUsage = Math.max(1e-9, ...threats.map(t => t.meta.usage));
   const n = valid.length;
   const out: ThreatEntry[] = [];
+  // Tabela defensiva de cada membro (golpes de quem tem Mold Breaker são recalculados).
+  const tables = valid.map(m => {
+    const out = new Map<TypeName, number>();
+    for (const type of TYPES) out.set(type, defenseMult(ctx, m, type));
+    return out;
+  });
   for (const t of threats) {
     if (!t.member.form) continue;
     const victims: string[] = [];
     const answers: string[] = [];
     let victimScore = 0;
     let faster = 0;
-    for (const m of valid) {
-      const maxIn = Math.max(0, ...t.attackTypes.map(type => defenseMult(ctx, m, type, t.member.ability)));
-      const stabIn = Math.max(0, ...t.member.types.map(type => defenseMult(ctx, m, type, t.member.ability)));
+    const breaker = MOLD_BREAKERS.has(t.member.ability);
+    for (const [i, m] of valid.entries()) {
+      const recv = (type: TypeName) => (breaker ? defenseMult(ctx, m, type, t.member.ability) : tables[i].get(type)!);
+      const maxIn = Math.max(0, ...t.attackTypes.map(recv));
+      const stabIn = Math.max(0, ...t.member.types.map(recv));
       const hits = bestHit(ctx, m, t.member.types, t.member.ability, field);
       const tFaster = t.speed > memberSpeed(m);
       if (maxIn >= 2) {
@@ -300,6 +324,7 @@ export function teamIssues(ctx: EngineContext, members: Member[], roles: RoleMap
   if (members.length > 6) push('error', `A equipe tem ${members.length} membros; o máximo é 6.`);
   for (const m of members) {
     const label = m.name || `Membro ${m.slot + 1}`;
+    if (!m.set.species) continue; // slot vazio
     if (!m.species) {
       push('error', `${m.set.species || '(sem espécie)'}: espécie desconhecida no Champions.`, m.slot);
       continue;
@@ -309,7 +334,7 @@ export function teamIssues(ctx: EngineContext, members: Member[], roles: RoleMap
     }
     if (!ctx.dex.isLegal(m.species)) push('error', `${label} não é permitido na Reg ${reg}.`, m.slot);
     if (m.set.item) {
-      if (!m.item) push('error', `${label}: item desconhecido (${m.set.item}).`, m.slot);
+      if (!m.item) push('error', `${label}: o item ${m.set.item} não existe no Pokémon Champions.`, m.slot);
       else if (!m.item.legal[reg]) push('error', `${label}: ${m.item.name} não está disponível no Champions (Reg ${reg}).`, m.slot);
       else if (m.item.megaStone && !m.isMega) push('warn', `${label}: ${m.item.name} não faz este Pokémon Mega Evoluir.`, m.slot);
     }
@@ -462,7 +487,7 @@ function summarize(
   } else {
     out.push('Defensivamente equilibrada: nenhuma fraqueza compartilhada grave.');
   }
-  if (missing.length) out.push(`Papéis faltando: ${listPt(missing.slice(0, 4).map(r => r.namePt.toLowerCase()))}.`);
+  if (missing.length) out.push(`Papéis faltando: ${listPt(missing.slice(0, 4).map(rolePhrase))}.`);
   const uncovered = offensive.filter(r => r.best < 2).map(r => TYPE_PT[r.type]);
   if (uncovered.length) out.push(`Sem golpe super efetivo contra: ${listPt(uncovered, 6)}.`);
   if (threats.length) {
@@ -490,7 +515,8 @@ export function teamState(ctx: EngineContext, team: Team): TeamState {
     lru.set(key, hit);
     return hit;
   }
-  const state = computeTeamState(ctx, team);
+  // Cópia própria: o estado em cache não muda se quem chamou alterar a equipe depois.
+  const state = computeTeamState(ctx, cloneTeam(team, key));
   lru.set(key, state);
   if (lru.size > STATE_CACHE_MAX) {
     const oldest = lru.keys().next().value;
@@ -499,12 +525,21 @@ export function teamState(ctx: EngineContext, team: Team): TeamState {
   return state;
 }
 
+function cloneTeam(team: Team, json: string): Team {
+  try {
+    return structuredClone(team);
+  } catch {
+    return JSON.parse(json) as Team;
+  }
+}
+
 function computeTeamState(ctx: EngineContext, team: Team): TeamState {
   const members = resolveTeam(ctx, team);
   const valid = members.filter(m => m.form);
   const roles = members.map(m => memberRoles(ctx, m));
   const archetypes = detectArchetypes(ctx, members);
   const field = fieldOf(archetypes);
+  members.forEach((m, i) => addFieldSpeedRole(ctx, m, roles[i], field));
   const defensive = defensiveRows(ctx, members);
   const offensive = coverageRows(ctx, members, field);
   const { coverage, missing } = roleCoverage(ctx, members, roles);

@@ -7,6 +7,7 @@
 import type { EngineContext, MoveSetSuggestion, MoveSuggestion } from '../api.ts';
 import { coverageRows } from '../analysis.ts';
 import { TYPE_PT } from '../i18n.ts';
+import { toId } from '../id.ts';
 import { rolesOfMove, type RoleIndexEntry } from '../roles.ts';
 import {
   attackStat, baseAttack, baseBulk, defenseMult, isDamaging, moveEffectiveness, moveTypeFor, NON_COVERAGE, PROTECT_MOVES,
@@ -15,7 +16,7 @@ import {
 import { TYPES } from '../typechart.ts';
 import { clamp01, listPt, memo, pctPt, ruleWeight } from '../util.ts';
 import type { MoveData, Team, TypeName } from '../types.ts';
-import { modeArchetypes, rolePhrase, slotContext, squash, threatList, type SlotContext } from './common.ts';
+import { GENERIC_ARCHETYPES, modeArchetypes, rolePhrase, slotContext, squash, threatList, type SlotContext } from './common.ts';
 
 /* --------------------------- poder efetivo --------------------------- */
 
@@ -25,7 +26,17 @@ const FIXED_VALUE: Record<string, number> = {
   metalburst: 0.25, comeuppance: 0.3, beatup: 0.2, spitup: 0.05, fling: 0.12, fissure: 0.12, guillotine: 0.12, horndrill: 0.12, sheercold: 0.12,
 };
 const SELF_KO = new Set(['explosion', 'selfdestruct', 'mistyexplosion']);
-const PROTECT_QUALITY: Record<string, number> = { protect: 1, detect: 1, spikyshield: 1.05, banefulbunker: 1.03, kingsshield: 1.04 };
+/** Golpes pouco confiáveis em duplas (falham, travam, atrasam ou custam caro). */
+const UNRELIABLE: Record<string, number> = {
+  focuspunch: 0.4, futuresight: 0.5, outrage: 0.7, thrash: 0.65, petaldance: 0.65, ragingfury: 0.7, steelbeam: 0.6,
+  belch: 0.3, lastresort: 0.2, burnup: 0.6, uproar: 0.6, snore: 0.1, upperhand: 0.35,
+};
+/** Golpes que só funcionam com terreno ativo. */
+const NEEDS_TERRAIN = new Set(['steelroller']);
+/** Papéis de status que rendem menos em atacantes. */
+const SOFT_ROLES = new Set(['support', 'disruption', 'screens', 'teamprotect', 'redirection']);
+// Detect é igual ao Protect, mas fica atrás no empate (Protect é o padrão).
+const PROTECT_QUALITY: Record<string, number> = { protect: 1, detect: 0.98, spikyshield: 1.05, banefulbunker: 1.03, kingsshield: 1.04 };
 const CHOICE_OK = new Set(['trick', 'switcheroo']);
 const SUPPORT_MOVES = new Set(['helpinghand', 'followme', 'ragepowder', 'allyswitch', 'coaching', 'pollenpuff', 'lifedew', 'healpulse', 'decorate', 'afteryou']);
 
@@ -165,21 +176,43 @@ export function damageInfo(member: Member, move: MoveData, field: FieldState, sp
   if (move.flags.includes('recharge')) drawback *= 0.45;
   if (move.flags.includes('cantusetwice')) drawback *= 0.85;
   if (SELF_KO.has(move.id)) drawback *= 0.35;
+  drawback *= UNRELIABLE[move.id] ?? 1;
+  if (NEEDS_TERRAIN.has(move.id) && !field.terrain) drawback *= 0.25;
   const spreadMult = spread ? spreadValue : 1;
   const power = bp * stabMult * abilityPowerMult(member, move, type, field, sunLike) * weatherMult * terrainMult * acc * drawback * spreadMult * statFactor;
-  return { value: clamp01((power - 25) / 155), power, type, stab, spread, categoryFit, notes };
+  return { value: powerValue(power), power, type, stab, spread, categoryFit, notes };
+}
+
+/**
+ * Poder efetivo -> nota 0-1: linear até ~145 e depois com retorno decrescente,
+ * para Eruption no sol continuar acima de golpes bem mais fracos (antes os dois
+ * saturavam em 1).
+ */
+export function powerValue(power: number): number {
+  if (!Number.isFinite(power) || power <= 25) return 0;
+  const knee = 145;
+  const atKnee = (knee - 25) / 155;
+  if (power <= knee) return (power - 25) / 155;
+  return clamp01(atKnee + (1 - atKnee) * (1 - Math.exp(-(power - knee) / 110)));
 }
 
 /* -------------------------- valor de papel -------------------------- */
 
-function roleValue(member: Member, move: MoveData, entries: RoleIndexEntry[], damaging: boolean): number {
+/** Qualidade do golpe no papel para este membro (setup no atributo certo, suporte em atacante...). */
+function roleQuality(member: Member, move: MoveData, e: RoleIndexEntry, attacker: boolean): number {
+  let q = e.quality;
+  if (e.role.id === 'setup') q *= setupFit(member, move);
+  if (SOFT_ROLES.has(e.role.id) && attacker) q *= 0.7;
+  return q;
+}
+
+function roleValue(member: Member, move: MoveData, entries: RoleIndexEntry[], damaging: boolean, attacker: boolean): number {
   let best = 0;
   for (const e of entries) {
     if (e.role.scope === 'member') continue;
     if (damaging && e.role.id === 'spread') continue;
-    let q = e.quality;
-    if (e.role.id === 'setup') q *= setupFit(member, move);
-    best = Math.max(best, 0.25 + 0.55 * q * Math.min(1, e.role.weight + 0.3));
+    const q = roleQuality(member, move, e, attacker);
+    best = Math.max(best, 0.18 + 0.55 * q * Math.min(1, e.role.weight + 0.3));
   }
   return best;
 }
@@ -272,7 +305,7 @@ function speedFit(env: RankEnv, moveId: string): number {
 function evaluate(env: RankEnv, move: MoveData): Candidate {
   const { ctx, sc, member } = env;
   const damaging = isDamaging(move);
-  const usage = sc.meta?.moves?.find(m => m.id === move.id)?.share ?? 0;
+  const usage = sc.formMeta?.moves?.find(m => m.id === move.id)?.share ?? 0;
   const roles = rolesOfMove(ctx, move).filter(e => e.role.scope !== 'member');
   const isProtect = PROTECT_MOVES.has(move.id);
   const parts: Part[] = [];
@@ -294,7 +327,7 @@ function evaluate(env: RankEnv, move: MoveData): Candidate {
   const coverageMove = damaging && !NON_COVERAGE.has(move.id);
   if (damaging) {
     dmg = damageInfo(member, move, sc.field, ruleWeight(ctx, 'spread-doubles', 1.2));
-    const r = roleValue(member, move, roles, true);
+    const r = roleValue(member, move, roles, true, env.attackerProfile);
     intrinsic = Math.max(dmg.value, r) + 0.25 * Math.min(dmg.value, r);
     if (dmg.power > 0) {
       const desc = [dmg.stab ? `STAB de ${TYPE_PT[dmg.type]}` : `golpe de ${TYPE_PT[dmg.type]}`];
@@ -306,7 +339,9 @@ function evaluate(env: RankEnv, move: MoveData): Candidate {
     if (dmg.stab) tags.push('stab');
     if (dmg.spread) tags.push('spread');
   } else if (!isProtect) {
-    intrinsic = roleValue(member, move, roles, false);
+    intrinsic = roleValue(member, move, roles, false, env.attackerProfile);
+    const top = [...roles].sort((a, b) => b.quality * b.role.weight - a.quality * a.role.weight)[0];
+    if (top) intrinsicText = `${capitalize(rolePhrase(top.role))}: ${firstSentence(top.role.description)}`;
     if (!intrinsic) {
       intrinsic = move.effects?.heal ? 0.25 + 0.15 * clamp01((baseBulk(member.form!) - 120) / 80) : 0.12;
     }
@@ -319,16 +354,28 @@ function evaluate(env: RankEnv, move: MoveData): Candidate {
   if (isProtect) {
     tags.push('protect');
     if (member.itemId !== 'choicescarf') {
-      add('protect', ruleWeight(ctx, 'protect-baseline', 0.55) * (PROTECT_QUALITY[move.id] ?? 1), 'Protect é básico em VGC: scouting, bloquear Fake Out e ataques focados.', `${move.name} é básico em VGC`);
+      // Sem dados de uso, o intrínseco tem peso cheio: Protect sobe junto para continuar competitivo.
+      const scale = env.hasMoveMeta ? 1 : 1.6;
+      add('protect', ruleWeight(ctx, 'protect-baseline', 0.55) * scale * (PROTECT_QUALITY[move.id] ?? 1), 'Protect é básico em VGC: scouting, bloquear Fake Out e ataques focados.', `${move.name} é básico em VGC`);
     }
   }
 
   // Choice Scarf
   if (member.itemId === 'choicescarf' && !damaging && !CHOICE_OK.has(move.id)) {
     add('choice', -ruleWeight(ctx, 'choice-status', 0.8), 'Com Choice Scarf o Pokémon fica preso no golpe: status quase nunca vale a pena.', `${move.name} não combina com Choice Scarf`);
+  } else if (member.itemId === 'choicescarf' && damaging && dmg && dmg.value < 0.35) {
+    add('choice', -0.3, 'Com Choice Scarf ficaria preso num golpe fraco.', `${move.name} prende o Choice Scarf num golpe fraco`);
   }
   if (!damaging && member.ability === 'prankster') {
     add('prankster', ruleWeight(ctx, 'prankster-status', 0.15), 'Ganha prioridade com Prankster.', 'ganha prioridade com Prankster');
+  }
+  if (move.id === 'auroraveil') {
+    // Aurora Veil só funciona na neve (equipe ou o próprio Snow Warning).
+    if (sc.field.weather === 'Snow' || member.ability === 'snowwarning') {
+      add('setter', 0.35, 'Com neve, Aurora Veil reduz o dano físico e especial da dupla por 5 turnos.', 'a equipe tem neve para Aurora Veil');
+    } else {
+      add('conflict', -0.45, 'Aurora Veil falha sem neve, e a equipe não ativa neve.', 'Aurora Veil falha sem neve');
+    }
   }
   if (move.id === 'wideguard') {
     const p = spreadPressure(ctx);
@@ -355,9 +402,9 @@ function evaluate(env: RankEnv, move: MoveData): Candidate {
   // Arquétipo
   for (const a of modeArchetypes(sc.archetypes)) {
     if (a.def.antiSynergyMoves.includes(move.id)) {
-      add('conflict', -ruleWeight(ctx, 'archetype-conflict', 0.9) * a.confidence, `Conflita com o modo ${a.def.namePt} da equipe.`, `${move.name} conflita com o ${a.def.namePt} da equipe`);
+      add('conflict', -ruleWeight(ctx, 'archetype-conflict', 1.3) * a.confidence, `Conflita com o modo ${a.def.namePt} da equipe.`, `${move.name} conflita com o ${a.def.namePt} da equipe`);
       tags.push('conflito');
-    } else if (a.def.setters.moves.includes(move.id) || a.def.abusers.traits.some(t => t === `move:${move.id}`)) {
+    } else if (!GENERIC_ARCHETYPES.has(a.def.id) && (a.def.setters.moves.includes(move.id) || a.def.abusers.traits.some(t => t === `move:${move.id}`))) {
       add('setter', ruleWeight(ctx, 'archetype-setter', 0.25) * a.confidence, `Reforça o modo ${a.def.namePt} da equipe.`, `reforça o ${a.def.namePt} da equipe`);
     }
   }
@@ -366,32 +413,62 @@ function evaluate(env: RankEnv, move: MoveData): Candidate {
   const seTypes: TypeName[] = [];
   const threatHits: { name: string; danger: number }[] = [];
   if (coverageMove && dmg && dmg.value > 0.05) {
-    for (const t of TYPES) if (moveEffectiveness(ctx, move, member.ability, [t], undefined, sc.field) >= 2) seTypes.push(t);
+    const key = `se:${move.id}:${member.ability}:${sc.field.weather ?? ''}:${sc.field.terrain ?? ''}`;
+    seTypes.push(...memo(ctx, key, () => TYPES.filter(t => moveEffectiveness(ctx, move, member.ability, [t], undefined, sc.field) >= 2)));
     for (const t of env.threats) {
       if (moveEffectiveness(ctx, move, member.ability, t.types, t.ability, sc.field) >= 2) threatHits.push({ name: t.name, danger: t.danger });
     }
   }
   for (const e of roles) tags.push(e.role.id);
-  if (move.priority > 0) tags.push('prioridade');
+  if (damaging && move.priority > 0) tags.push('prioridade');
   const base = parts.reduce((s, p) => s + p.value, 0);
   return { move, usage, damaging, isProtect, dmg, roles, seTypes, threatHits, base, parts, tags: [...new Set(tags)] };
+}
+
+function firstSentence(text: string): string {
+  const i = text.indexOf(': ');
+  const j = text.indexOf('. ');
+  const cut = [i, j].filter(x => x > 0).sort((a, b) => a - b)[0];
+  return cut ? `${text.slice(0, cut)}.` : text;
 }
 
 function capitalize(text: string): string {
   return text ? text[0].toUpperCase() + text.slice(1) : text;
 }
 
+/** Resumo dos golpes já escolhidos (calculado uma vez por rodada da escolha gulosa). */
+interface Picked {
+  list: Candidate[];
+  roles: Set<string>;
+  covered: Set<TypeName>;
+  threats: Set<string>;
+  status: number;
+  hasProtect: boolean;
+}
+
+function summarizePicked(list: Candidate[]): Picked {
+  return {
+    list,
+    roles: new Set(list.flatMap(p => p.roles.map(r => r.role.id))),
+    covered: new Set(list.flatMap(p => p.seTypes)),
+    threats: new Set(list.flatMap(p => p.threatHits.map(h => h.name))),
+    status: list.filter(p => !p.damaging).length,
+    hasProtect: list.some(p => p.isProtect),
+  };
+}
+
 /** Partes que dependem dos golpes já escolhidos (papéis, cobertura, redundância). */
-function dynamicParts(env: RankEnv, c: Candidate, picked: Candidate[], slotIndex: number): Part[] {
+function dynamicParts(env: RankEnv, c: Candidate, pk: Picked, slotIndex: number): Part[] {
   const { ctx, sc } = env;
+  const picked = pk.list;
   const out: Part[] = [];
   const add = (key: PartKey, value: number, textPt: string, diffPt?: string) => {
     if (Math.abs(value) > 1e-6) out.push({ key, value, textPt, diffPt });
   };
   // Papéis
   for (const e of c.roles) {
-    const q = e.quality * (e.role.id === 'speedcontrol' ? speedFit(env, c.move.id) : 1);
-    const inPicked = picked.some(p => p.roles.some(r => r.role.id === e.role.id));
+    const q = roleQuality(env.member, c.move, e, env.attackerProfile) * (e.role.id === 'speedcontrol' ? speedFit(env, c.move.id) : 1);
+    const inPicked = pk.roles.has(e.role.id);
     const provided = sc.providers.get(e.role.id) ?? 0;
     if (inPicked) {
       const soft = e.role.id === 'spread' || e.role.id === 'priority' ? 0.3 : 1;
@@ -410,8 +487,7 @@ function dynamicParts(env: RankEnv, c: Candidate, picked: Candidate[], slotIndex
   }
   // Cobertura de tipos
   if (c.seTypes.length && c.dmg) {
-    const coveredByPicked = new Set(picked.flatMap(p => p.seTypes));
-    const fresh = c.seTypes.filter(t => env.uncovered.has(t) && !coveredByPicked.has(t));
+    const fresh = c.seTypes.filter(t => env.uncovered.has(t) && !pk.covered.has(t));
     if (fresh.length) {
       const names = listPt(fresh.map(t => TYPE_PT[t]));
       add(
@@ -424,8 +500,7 @@ function dynamicParts(env: RankEnv, c: Candidate, picked: Candidate[], slotIndex
   }
   // Ameaças do meta
   if (c.threatHits.length && c.dmg) {
-    const hitByPicked = new Set(picked.flatMap(p => p.threatHits.map(h => h.name)));
-    const danger = c.threatHits.reduce((s, h) => s + h.danger * (hitByPicked.has(h.name) ? 0.3 : 1), 0);
+    const danger = c.threatHits.reduce((s, h) => s + h.danger * (pk.threats.has(h.name) ? 0.3 : 1), 0);
     if (danger > 0.05) {
       const names = listPt(c.threatHits.slice().sort((a, b) => b.danger - a.danger).map(h => h.name), 3);
       add(
@@ -444,21 +519,30 @@ function dynamicParts(env: RankEnv, c: Candidate, picked: Candidate[], slotIndex
       add('redundancy', -ruleWeight(ctx, 'redundancy-type', 0.3) * soft, `Mesmo tipo (${TYPE_PT[c.dmg.type]}) de ${same.move.name}.`);
     }
   }
-  if (c.isProtect && picked.some(p => p.isProtect)) add('redundancy', -1.5, 'Já há um golpe de proteção no set.');
+  if (c.isProtect && pk.hasProtect) add('redundancy', -1.5, 'Já há um golpe de proteção no set.');
   // Equilíbrio entre ataque e status
-  const statusPicked = picked.filter(p => !p.damaging).length;
+  const statusPicked = pk.status;
   const damagingPicked = picked.length - statusPicked;
   if (!c.damaging && statusPicked >= 2) {
     add('balance', -0.2 * (statusPicked - 1) * (env.attackerProfile ? 1.2 : 0.6), 'Set já tem muitos golpes de status.');
   }
   if (c.damaging && slotIndex === 3 && damagingPicked === 0) add('balance', 0.4, 'Garante ao menos um golpe de dano.');
+  // Sem dados de uso, o último slot puxa Protect (quase todo set de VGC leva).
+  const scarf = env.member.itemId === 'choicescarf';
+  if (c.isProtect && slotIndex === 3 && !pk.hasProtect && !env.hasMoveMeta && !scarf) {
+    add('protect', 0.25, 'Quase todo set de VGC leva Protect.', `${c.move.name} é básico em VGC`);
+  }
+  if (c.damaging && slotIndex === 3 && damagingPicked === 3 && !pk.hasProtect && !scarf) {
+    add('balance', -0.2, 'Quatro ataques sem Protect deixam o Pokémon exposto em duplas.');
+  }
   if (c.damaging && slotIndex === 3 && damagingPicked === 1 && env.attackerProfile) add('balance', 0.15, 'Atacante precisa de mais de um golpe de dano.');
   return out;
 }
 
-function reasonsOf(parts: Part[]): string[] {
+function reasonsOf(parts: Part[], move: MoveData): string[] {
   const sorted = [...parts].sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
-  return sorted.slice(0, 4).map(p => p.textPt);
+  const out = sorted.slice(0, 4).map(p => p.textPt);
+  return out.length ? out : [`Pouco impacto para esta equipe (${move.name}).`];
 }
 
 /* ------------------------------ entrada ------------------------------ */
@@ -466,6 +550,14 @@ function reasonsOf(parts: Part[]): string[] {
 const EMPTY: MoveSetSuggestion = { recommended: [], mostUsed: [], ranked: [], diffPt: [] };
 
 export function suggestMoves(ctx: EngineContext, team: Team, slot: number): MoveSetSuggestion {
+  return rankMoves(ctx, team, slot, []);
+}
+
+/**
+ * Como suggestMoves, mas os golpes de `keep` (escolhas do usuário, se a
+ * espécie aprende) entram primeiro e a escolha gulosa só completa o resto.
+ */
+export function rankMoves(ctx: EngineContext, team: Team, slot: number, keep: string[]): MoveSetSuggestion {
   const sc = slotContext(ctx, team, slot);
   if (!sc) return { ...EMPTY };
   const member = sc.bare;
@@ -482,12 +574,12 @@ export function suggestMoves(ctx: EngineContext, team: Team, slot: number): Move
     sc,
     member,
     speciesName: species.name,
-    hasMoveMeta: !!sc.meta?.moves?.length,
+    hasMoveMeta: !!sc.formMeta?.moves?.length,
     uncovered: sc.others.length ? uncovered : new Set(TYPES),
     threats,
     teamAvgSpe,
     attackerProfile: baseAttack(form, member.ability) >= 100,
-    supportProfile: baseAttack(form, member.ability) < 95 || baseBulk(form) >= 170,
+    supportProfile: baseAttack(form, member.ability) < 95 || (baseBulk(form) >= 170 && baseAttack(form, member.ability) < 110),
   };
 
   const candidates = learnset.map(m => evaluate(env, m));
@@ -496,13 +588,22 @@ export function suggestMoves(ctx: EngineContext, team: Team, slot: number): Move
   const picked: Candidate[] = [];
   const pickedParts = new Map<string, Part[]>();
   const pickedScore = new Map<string, number>();
-  for (let k = 0; k < Math.min(4, candidates.length); k++) {
+  for (const id of new Set(keep.map(toId))) {
+    const c = candidates.find(x => x.move.id === id);
+    if (!c || picked.length >= 4) continue;
+    const dyn = dynamicParts(env, c, summarizePicked(picked), picked.length);
+    picked.push(c);
+    pickedParts.set(c.move.id, [...c.parts, ...dyn]);
+    pickedScore.set(c.move.id, c.base + dyn.reduce((s, p) => s + p.value, 0));
+  }
+  for (let k = picked.length; k < Math.min(4, candidates.length); k++) {
     let best: Candidate | null = null;
     let bestScore = -Infinity;
     let bestDyn: Part[] = [];
+    const pk = summarizePicked(picked);
     for (const c of candidates) {
       if (picked.includes(c)) continue;
-      const dyn = dynamicParts(env, c, picked, k);
+      const dyn = dynamicParts(env, c, pk, k);
       const score = c.base + dyn.reduce((s, p) => s + p.value, 0);
       if (score > bestScore) {
         bestScore = score;
@@ -516,11 +617,12 @@ export function suggestMoves(ctx: EngineContext, team: Team, slot: number): Move
     pickedScore.set(best.move.id, bestScore);
   }
 
-  // Lista completa (avaliada como se fosse o primeiro golpe, exceto os escolhidos)
+  // Lista completa: os não escolhidos são avaliados contra os 4 recomendados
+  const finalPicked = summarizePicked(picked);
   const ranked: (MoveSuggestion & { raw: number; parts: Part[] })[] = candidates.map(c => {
-    const parts = pickedParts.get(c.move.id) ?? [...c.parts, ...dynamicParts(env, c, picked.filter(p => p !== c), 0)];
+    const parts = pickedParts.get(c.move.id) ?? [...c.parts, ...dynamicParts(env, c, finalPicked, 0)];
     const raw = pickedScore.get(c.move.id) ?? parts.reduce((s, p) => s + p.value, 0);
-    return { move: c.move.name, score: squash(raw), usage: c.usage, reasonsPt: reasonsOf(parts), tags: c.tags, raw, parts };
+    return { move: c.move.name, score: squash(raw), usage: c.usage, reasonsPt: reasonsOf(parts, c.move), tags: c.tags, raw, parts };
   });
   ranked.sort((a, b) => b.raw - a.raw);
 
@@ -567,6 +669,9 @@ function whyPt(added: string, removed: string | undefined, byName: Map<string, R
 
 function explainDiff(ctx: EngineContext, sc: SlotContext, recommended: string[], mostUsed: string[], byName: Map<string, RankedEntry>): string[] {
   const out: string[] = [];
+  if (sc.meta?.moves?.length && !sc.formMeta) {
+    out.push(`Os golpes mais usados no meta são de outra forma de ${sc.member.name}; a recomendação é para ${sc.member.formName}.`);
+  }
   const reference = mostUsed.length ? mostUsed : (sc.member.set.moves ?? []).filter(Boolean).map(m => ctx.dex.move(m)?.name ?? m);
   if (!reference.length) {
     return sc.meta?.moves?.length
@@ -578,7 +683,7 @@ function explainDiff(ctx: EngineContext, sc: SlotContext, recommended: string[],
   const added = recommended.filter(m => !refIds.has(m));
   const removed = reference.filter(m => !recIds.has(m)).sort((x, y) => (byName.get(x)?.raw ?? 0) - (byName.get(y)?.raw ?? 0));
   const label = mostUsed.length ? 'mais usados no meta' : 'do seu set atual';
-  if (!added.length && !removed.length) return [`A recomendação coincide com os golpes ${label}.`];
+  if (!added.length && !removed.length) return [...out, `A recomendação coincide com os golpes ${label}.`];
   added.forEach((m, i) => {
     const r = removed[i];
     out.push(r ? `Troque ${r} por ${m}: ${whyPt(m, r, byName)}.` : `Inclua ${m}: ${whyPt(m, undefined, byName)}.`);

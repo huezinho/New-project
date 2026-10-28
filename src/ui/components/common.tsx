@@ -1,5 +1,5 @@
 /** Componentes pequenos e reutilizáveis (barras, avisos, modal). */
-import { useEffect, useId, useRef, type ReactNode } from 'react';
+import { Component, useEffect, useId, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { Safe } from '../engineBridge.ts';
 import { clamp01 } from '../util.ts';
@@ -137,4 +137,36 @@ export function Reasons({ items, max = 3 }: { items: string[] | undefined; max?:
       )}
     </div>
   );
+}
+
+/** Isola falhas de renderização: uma aba com dados inesperados não derruba o app inteiro. */
+export class ErrorBoundary extends Component<{ children: ReactNode; resetKey?: string; what?: string }, { error: Error | null }> {
+  state: { error: Error | null } = { error: null };
+
+  static getDerivedStateFromError(error: unknown) {
+    return { error: error instanceof Error ? error : new Error(String(error)) };
+  }
+
+  componentDidUpdate(prev: { resetKey?: string }) {
+    // trocar de aba (ou de equipe) tenta renderizar de novo
+    if (prev.resetKey !== this.props.resetKey && this.state.error) this.setState({ error: null });
+  }
+
+  render() {
+    if (!this.state.error) return this.props.children;
+    return (
+      <div className="notice notice-error" role="alert">
+        <strong className="notice-title">{this.props.what ?? 'Esta seção'} não pôde ser exibida</strong>
+        <div>
+          <p className="small">
+            Algum dado veio num formato inesperado (<code>{this.state.error.message}</code>). O restante do app continua funcionando; rodar{' '}
+            <code>npm run update-data</code> costuma resolver.
+          </p>
+          <button type="button" className="btn btn-sm" onClick={() => this.setState({ error: null })}>
+            Tentar novamente
+          </button>
+        </div>
+      </div>
+    );
+  }
 }

@@ -17,6 +17,7 @@
   --brand: #e3350d;
   --good: #15803d;
   --good-soft: #dcfce7;
+  --good-strong: #166534;
   --warn: #b45309;
   --warn-soft: #fef3c7;
   --bad: #b91c1c;
@@ -49,12 +50,13 @@
     --border-strong: #3a4460;
     --text: #e6e9f2;
     --muted: #9ca6bd;
-    --accent: #818cf8;
+    --accent: #8f99fa;
     --accent-hover: #a5b4fc;
     --accent-soft: #272d55;
     --accent-text: #0d111b;
     --good: #4ade80;
     --good-soft: #12301f;
+    --good-strong: #4ade80;
     --warn: #fbbf24;
     --warn-soft: #3a2a0c;
     --bad: #f87171;
@@ -182,6 +184,9 @@ code {
 .ok-text {
   color: var(--good);
   font-weight: 600;
+}
+.row-on .ok-text {
+  color: var(--good-strong);
 }
 .bad-text {
   color: var(--bad);
@@ -760,13 +765,17 @@ details > summary {
 
 /* ------------------------------ sprites ----------------------------- */
 
+/* tamanho via --sz definido pelo componente; media queries sobrescrevem width/height */
 .sprite {
   display: inline-block;
   flex: 0 0 auto;
+  width: var(--sz, 56px);
+  height: var(--sz, 56px);
   object-fit: contain;
   image-rendering: auto;
 }
 .sprite-fallback {
+  font-size: max(11px, calc(var(--sz, 56px) * 0.32));
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -800,7 +809,7 @@ details > summary {
   padding: 0 6px;
 }
 .type-badge.light {
-  color: #1b2030;
+  color: #0f1420;
   text-shadow: none;
 }
 
@@ -2250,6 +2259,44 @@ span.mcell {
   white-space: nowrap;
 }
 
+.kind-tiles {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.kind-tiles li {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.kind-name {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.kind-value {
+  font-size: 1.5rem;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.arch-stats {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+.only-mobile {
+  display: none;
+}
+
 /* ---------------------------- responsivo ---------------------------- */
 
 @media (max-width: 1100px) {
@@ -2297,12 +2344,19 @@ span.mcell {
     width: 40px;
     height: 40px;
   }
+  .slot-top .sprite-fallback {
+    font-size: 13px;
+  }
   .slot-empty {
     min-height: 100px;
   }
   .sp-grid {
     grid-template-columns: 44px 30px minmax(0, 1fr) 50px 36px;
     gap: 6px;
+  }
+  .sp-h {
+    font-size: 0.64rem;
+    letter-spacing: 0;
   }
   .sp-long {
     display: none;
@@ -2328,5 +2382,136 @@ span.mcell {
   }
   .filters .field {
     max-width: none;
+  }
+  .only-mobile {
+    display: flex;
+  }
+
+  /* tabelas empilhadas: cada linha vira um cartão */
+  .data-table.stack thead,
+  .usage-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+  .data-table.stack,
+  .data-table.stack tbody,
+  .data-table.stack tr,
+  .data-table.stack td {
+    display: block;
+    width: 100%;
+  }
+  .data-table.stack tr {
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .data-table.stack td {
+    border: 0;
+    padding: 1px 0;
+    text-align: left;
+  }
+  .data-table.stack td.stack-title {
+    font-weight: 600;
+    padding-bottom: 2px;
+  }
+  .data-table.stack td:not(.stack-title):not(.stack-sub) {
+    display: inline-block;
+    width: auto;
+    margin-right: 14px;
+  }
+  .usage-table td.c-act .btn {
+    white-space: nowrap;
+  }
+  .data-table.stack td.stack-sub {
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+  .data-table.stack td[data-label]::before,
+  .usage-table td[data-label]::before {
+    content: attr(data-label) ': ';
+    color: var(--muted);
+    font-size: 0.78rem;
+    font-weight: 600;
+  }
+  .data-table.stack tr.row-on td {
+    background: transparent;
+  }
+  .data-table.stack tr.row-on {
+    background: var(--accent-soft);
+    border-radius: var(--radius-sm);
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+
+  /* uso por Pokémon em cartões */
+  .usage-table,
+  .usage-table tbody {
+    display: block;
+    width: 100%;
+  }
+  .usage-table tbody tr {
+    display: grid;
+    grid-template-columns: 24px repeat(4, minmax(0, 1fr));
+    gap: 4px 8px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+    align-items: start;
+  }
+  .usage-table td {
+    display: block;
+    border: 0 !important;
+    padding: 0 !important;
+    text-align: left !important;
+    min-width: 0;
+  }
+  .usage-table td.c-rank {
+    grid-column: 1;
+    grid-row: 1 / span 3;
+    padding-top: 8px !important;
+  }
+  .usage-table td.c-poke {
+    grid-column: 2 / span 3;
+    grid-row: 1;
+  }
+  .usage-table td.c-act {
+    grid-column: 5;
+    grid-row: 1;
+    justify-self: end;
+  }
+  .usage-table td.c-usage,
+  .usage-table td.c-win,
+  .usage-table td.c-top,
+  .usage-table td.c-trend {
+    grid-row: 2;
+    font-size: 0.84rem;
+  }
+  .usage-table td.c-usage {
+    grid-column: 2;
+  }
+  .usage-table td.c-win {
+    grid-column: 3;
+  }
+  .usage-table td.c-top {
+    grid-column: 4;
+  }
+  .usage-table td.c-trend {
+    grid-column: 5;
+  }
+  .usage-table td[data-label]::before {
+    display: block;
+    content: attr(data-label);
+  }
+  .usage-table td.c-items {
+    grid-column: 2 / span 2;
+    grid-row: 3;
+  }
+  .usage-table td.c-moves {
+    grid-column: 4 / span 2;
+    grid-row: 3;
+  }
+  .usage-table .poke-cell {
+    min-width: 0;
   }
 }

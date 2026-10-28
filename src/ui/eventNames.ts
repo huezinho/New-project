@@ -42,7 +42,12 @@ export function eventNamePt(name: string | undefined): string {
   if (m) return `Evento especial ${ofCity(m[1])}${year}${m[2]}`;
   m = /^Global Challenge (\w+)(.*)$/.exec(s);
   if (m) return `Global Challenge ${m[1]}${year}${m[2]}`;
-  s = s.replace(/^Regionals\b/, 'Regionais').replace(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sept?|Oct|Nov|Dec)\b/g, mo => MONTH_PT[mo] ?? mo).replace(/(\w)-(\w)/g, '$1–$2');
+  if (/^Regionals\b/.test(s)) {
+    // "Regionals Sept-Nov 2026 (...)" -> "Regionais set–nov 2026 (...)"
+    s = s
+      .replace(/^Regionals\b/, 'Regionais')
+      .replace(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sept?|Oct|Nov|Dec)-(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sept?|Oct|Nov|Dec)\b/g, (_, a: string, b: string) => `${MONTH_PT[a]}–${MONTH_PT[b]}`);
+  }
   return `${s}${year}`;
 }
 

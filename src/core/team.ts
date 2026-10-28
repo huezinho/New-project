@@ -47,6 +47,17 @@ const ATE_ABILITIES: Record<string, TypeName> = {
 };
 const WEATHER_BALL: Record<Weather, TypeName> = { Sun: 'Fire', Rain: 'Water', Sand: 'Rock', Snow: 'Ice' };
 export const TERRAIN_TYPE: Record<Terrain, TypeName> = { Electric: 'Electric', Grassy: 'Grass', Psychic: 'Psychic', Misty: 'Fairy' };
+/** Clima ativado pela habilidade ao entrar (Drought, Drizzle...). */
+export const ABILITY_WEATHER: Record<string, Weather> = { drought: 'Sun', drizzle: 'Rain', sandstream: 'Sand', snowwarning: 'Snow' };
+/** Terreno ativado pela habilidade ao entrar (Psychic Surge...). */
+export const ABILITY_TERRAIN: Record<string, Terrain> = {
+  psychicsurge: 'Psychic', grassysurge: 'Grassy', electricsurge: 'Electric', mistysurge: 'Misty', seedsower: 'Grassy',
+};
+
+/** Campo que o próprio Pokémon cria com a habilidade (para tipar Weather Ball/Terrain Pulse dele). */
+export function ownField(ability: string): FieldState {
+  return { weather: ABILITY_WEATHER[ability], terrain: ABILITY_TERRAIN[ability] };
+}
 
 /** Golpes de dano fixo/condicional que não contam para cobertura de tipos. */
 export const NON_COVERAGE = new Set(['seismictoss', 'nightshade', 'superfang', 'endeavor', 'finalgambit', 'counter', 'mirrorcoat', 'metalburst', 'fling', 'spitup', 'beatup', 'comeuppance']);
@@ -92,6 +103,26 @@ export function megaOptions(ctx: EngineContext, species: SpeciesData | undefined
 
 export const isMegaStone = (item: ItemData | undefined): boolean => !!item?.megaStone;
 
+/**
+ * Fração dos sets do meta desta espécie que usam a mesma forma em batalha do
+ * set (Mega X × Mega Y × sem Mega), pelo uso das Mega Stones. Golpes e spreads
+ * do meta só valem para a forma que de fato aparece (ex.: o meta do Charizard é
+ * quase todo Mega Y; um Charizard-Mega-X não deve herdar Heat Wave/Timid).
+ */
+export function metaFormShare(ctx: EngineContext, species: SpeciesData, item: ItemData | undefined, meta: MetaPokemon): number {
+  const stones = megaOptions(ctx, species).map(o => o.item.id);
+  const items = meta.items ?? [];
+  if (!stones.length || !items.length) return 1;
+  const total = items.reduce((sum, i) => sum + (i.share > 0 ? i.share : 0), 0);
+  if (total <= 0) return 1;
+  const share = (id: string) => Math.max(0, items.find(i => i.id === id)?.share ?? 0);
+  if (item && stones.includes(item.id)) return share(item.id) / total;
+  return Math.max(0, total - stones.reduce((sum, id) => sum + share(id), 0)) / total;
+}
+
+/** Forma do set é comum o bastante no meta para herdar golpes e spreads de lá. */
+export const META_FORM_MIN = 0.25;
+
 export function resolveMember(ctx: EngineContext, set: PokemonSet, slot: number): Member {
   const species = ctx.dex.species(set.species);
   const form = species ? ctx.dex.battleForm(set) ?? species : undefined;
@@ -102,7 +133,8 @@ export function resolveMember(ctx: EngineContext, set: PokemonSet, slot: number)
   const meta = metaOf(ctx, species);
   let moves = (set.moves ?? []).map(m => ctx.dex.move(m)).filter((m): m is MoveData => !!m);
   let assumedMoves = false;
-  if (!moves.length && species && !(set.moves ?? []).some(Boolean) && meta?.moves?.length) {
+  const sameForm = !!species && !!meta && metaFormShare(ctx, species, item, meta) >= META_FORM_MIN;
+  if (!moves.length && species && !(set.moves ?? []).some(Boolean) && meta?.moves?.length && sameForm) {
     moves = meta.moves
       .filter(m => ctx.dex.canLearn(species, m.id))
       .slice(0, 4)
@@ -244,10 +276,12 @@ export function metaThreats(ctx: EngineContext, limit = 30): ThreatProfile[] {
       const set = likelySet(ctx, mp);
       const member = resolveMember(ctx, set, -1);
       const types = new Set<TypeName>(member.types);
+      // Weather Ball de quem tem Drought (ex.: Charizard-Mega-Y) é de Fogo, não Normal.
+      const field = ownField(member.ability);
       for (const share of mp.moves ?? []) {
         const move = ctx.dex.move(share.id);
         if (share.share >= 0.2 && isDamaging(move) && !NON_COVERAGE.has(move!.id) && (move!.basePower >= 50 || move!.basePower === 0)) {
-          types.add(moveTypeFor(move!, member.ability).type);
+          types.add(moveTypeFor(move!, member.ability, field).type);
         }
       }
       const scarf = member.itemId === 'choicescarf';

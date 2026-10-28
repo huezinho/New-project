@@ -1,5 +1,5 @@
 /** Editor do set do slot selecionado: espécie, item, habilidade, natureza, SP e golpes. */
-import { useMemo, type CSSProperties } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import type { AbilitySuggestion, ItemSuggestion, MoveSuggestion, SpreadSuggestion } from '../../core/api.ts';
 import { toId } from '../../core/id.ts';
 import { CATEGORY_PT, NATURE_PT, pct, STAT_PT, STAT_SHORT, TYPE_PT } from '../../core/i18n.ts';
@@ -9,17 +9,20 @@ import { Combobox, type ComboOption } from '../components/Combobox.tsx';
 import { Card, EngineNotice, Notice, Reasons, ScoreBar } from '../components/common.tsx';
 import { Sprite } from '../components/Sprite.tsx';
 import { TypeBadge, TypeList } from '../components/TypeBadge.tsx';
-import { runAbilities, runItems, runMoves, runSpreads, type Safe } from '../engineBridge.ts';
+import { runAbilities, runBuildSet, runItems, runMoves, runSpreads, type Safe } from '../engineBridge.ts';
 import { useApp } from '../state.tsx';
-import { displayName, displayScore, isMegaStone, itemsForSpecies, MAX_TEAM, sanitizeSP, setSPValue, spSummary } from '../util.ts';
+import {
+  displayName, displayScore, illegalMoves, isMegaStone, itemsForSpecies, MAX_TEAM, repeatedMoves, sanitizeSP, setSPValue, spSummary,
+} from '../util.ts';
 
 const NO_SHARES: { id: string; name: string; share: number }[] = [];
 
 export function SetEditor() {
-  const { team, selected } = useApp();
+  const { team, selected, activeTeam } = useApp();
   const set = team[selected];
   if (!set) return team.length < MAX_TEAM ? <AddMember /> : null;
-  return <MemberEditor key={selected} slot={selected} set={set} />;
+  // remonta ao trocar de equipe salva (estado local do editor não vaza entre equipes)
+  return <MemberEditor key={`${activeTeam.id}:${selected}`} slot={selected} set={set} />;
 }
 
 /** Opções de espécie ordenadas pelo uso no meta. */
@@ -77,12 +80,27 @@ function AddMember() {
 }
 
 function MemberEditor({ slot, set }: { slot: number; set: PokemonSet }) {
-  const { dex, team, updateSet, replaceSpecies, removeSet, engineTeam } = useApp();
+  const { dex, bridge, team, updateSet, replaceSpecies, removeSet, engineTeam } = useApp();
   const species = dex.species(set.species);
   const form = dex.battleForm(set) ?? species;
   const ready = toId(engineTeam[slot]?.species) === toId(set.species) && !!species;
   const speciesOptions = useSpeciesOptions(slot);
   const megaCount = team.filter(s => isMegaStone(dex.item(s.item))).length;
+  const [applied, setApplied] = useState<'ok' | 'fallback' | null>(null);
+  useEffect(() => {
+    if (!applied) return;
+    const t = window.setTimeout(() => setApplied(null), 5000);
+    return () => window.clearTimeout(t);
+  }, [applied]);
+
+  // set completo (golpes, item, habilidade, natureza e SP) montado para o resto da equipe
+  const applyFullSet = () => {
+    if (!species) return;
+    const others = team.filter((_, i) => i !== slot);
+    const { set: built, fromEngine } = runBuildSet(bridge, others, species.name);
+    updateSet(slot, { item: built.item, ability: built.ability, nature: built.nature, sp: built.sp, moves: built.moves });
+    setApplied(fromEngine ? 'ok' : 'fallback');
+  };
 
   return (
     <Card
@@ -98,11 +116,30 @@ function MemberEditor({ slot, set }: { slot: number; set: PokemonSet }) {
         </span>
       }
       actions={
-        <button type="button" className="btn btn-ghost btn-sm" onClick={() => removeSet(slot)}>
-          Remover
-        </button>
+        <>
+          {species && (
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={applyFullSet}
+              title="Troca golpes, item, habilidade, natureza e SP pelo set que o motor recomenda para esta equipe"
+            >
+              Aplicar set recomendado
+            </button>
+          )}
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => removeSet(slot)}>
+            Remover
+          </button>
+        </>
       }
     >
+      {applied && (
+        <p className="small muted" aria-live="polite">
+          {applied === 'ok'
+            ? '✓ Set recomendado aplicado (golpes, item, habilidade, natureza e SP).'
+            : 'Motor indisponível: aplicado o set mais usado no meta (ou um spread básico).'}
+        </p>
+      )}
       <div className="editor-grid">
         <Combobox
           label="Espécie"
@@ -258,7 +295,10 @@ function SpEditor({ slot, set }: { slot: number; set: PokemonSet }) {
         {form?.isMega ? ` Valores finais da forma em batalha: ${form.name}.` : ''}
       </p>
       <div className="sp-grid">
-        <span className="sp-h">Atributo</span>
+        <span className="sp-h">
+          <span className="sp-long">Atributo</span>
+          <span className="sp-short">Atr.</span>
+        </span>
         <span className="sp-h num">Base</span>
         <span className="sp-h">SP</span>
         <span className="sp-h num" aria-hidden="true" />
@@ -347,6 +387,8 @@ function MovesEditor({ slot, set, species, ready }: { slot: number; set: Pokemon
   }, [dex, species, sugg, metaMoves]);
 
   const chosen = set.moves.map(m => toId(m));
+  const badMoves = illegalMoves(dex, set);
+  const repeated = repeatedMoves(dex, set);
   const setMove = (i: number, value: string) => {
     const moves = [...set.moves];
     if (value) moves[i] = value;
@@ -378,10 +420,10 @@ function MovesEditor({ slot, set, species, ready }: { slot: number; set: Pokemon
         <h3 id={headingId}>Golpes</h3>
         <div className="btn-row">
           <button type="button" className="btn btn-primary btn-sm" disabled={!recommended.length || sameAs(recommended)} onClick={() => apply(recommended)}>
-            Aplicar set recomendado
+            Aplicar golpes recomendados
           </button>
           <button type="button" className="btn btn-sm" disabled={!mostUsed.length || sameAs(mostUsed)} onClick={() => apply(mostUsed)}>
-            Aplicar mais usado
+            Aplicar golpes mais usados
           </button>
         </div>
       </div>
@@ -403,6 +445,12 @@ function MovesEditor({ slot, set, species, ready }: { slot: number; set: Pokemon
           );
         })}
       </div>
+      {badMoves.length > 0 && (
+        <p className="field-error">
+          {species.name} não aprende {badMoves.join(', ')} no Champions — troque {badMoves.length > 1 ? 'esses golpes' : 'esse golpe'}.
+        </p>
+      )}
+      {repeated.length > 0 && <p className="field-error">Golpe repetido: {repeated.join(', ')}.</p>}
       {!ready && <p className="muted small">Atualizando sugestões…</p>}
       {res && <EngineNotice result={res} what="Ranking de golpes" fallback="Os golpes aparecem ordenados pelo uso no meta (quando houver dados)." />}
       {sugg && (recommended.length > 0 || mostUsed.length > 0) && (

@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import type { CoverageRow, SpeedEntry, TeamAnalysis, TeamIssue, TypeMatchupRow } from '../../core/api.ts';
 import { pct, TYPE_PT } from '../../core/i18n.ts';
-import { effectiveSpeed, totalSP, validateSP } from '../../core/stats.ts';
+import { totalSP, validateSP } from '../../core/stats.ts';
 import type { Team } from '../../core/types.ts';
 import { Card, EmptyState, EngineNotice, Reasons, ScoreBar } from '../components/common.tsx';
 import { Sprite } from '../components/Sprite.tsx';
@@ -10,7 +10,7 @@ import { TypeBadge } from '../components/TypeBadge.tsx';
 import { runAnalysis } from '../engineBridge.ts';
 import { simpleDefensive, simpleOffensive, simpleSpeed } from '../fallback.ts';
 import { useApp } from '../state.tsx';
-import { formatMult, itemClauseConflicts, megaStoneCount, multClass, speciesClauseConflicts } from '../util.ts';
+import { formatMult, itemClauseConflicts, megaStoneCount, multClass, speciesClauseConflicts, speedRows, type SpeedMode } from '../util.ts';
 import type { DexAccess } from '../../core/dex.ts';
 
 export function AnalysisTab() {
@@ -272,14 +272,10 @@ function RolesChecklist({ analysis }: { analysis: TeamAnalysis }) {
   );
 }
 
-type SpeedMode = 'normal' | 'tailwind' | 'trickroom';
-
 function SpeedTiers({ entries }: { entries: SpeedEntry[] }) {
   const { dex } = useApp();
   const [mode, setMode] = useState<SpeedMode>('normal');
-  const rows = entries
-    .map(e => ({ ...e, eff: !e.isMeta && mode === 'tailwind' ? effectiveSpeed(e.speed, { tailwind: true }) : e.speed }))
-    .sort((a, b) => (mode === 'trickroom' ? a.eff - b.eff : b.eff - a.eff));
+  const rows = speedRows(entries, mode);
   return (
     <>
       <div className="segmented" role="radiogroup" aria-label="Condição de velocidade">
@@ -315,6 +311,7 @@ function SpeedTiers({ entries }: { entries: SpeedEntry[] }) {
               </span>
               <span className="small muted speed-label">
                 {e.label}
+                {!e.isMeta && mode === 'tailwind' ? ' · Tailwind (×2)' : ''}
                 {e.usage ? ` · uso ${pct(e.usage)}` : ''}
               </span>
             </li>
