@@ -1,13 +1,13 @@
 /** Painel lateral: sugestões de Pokémon para completar a equipe e ajuste de pesos. */
 import { useState } from 'react';
-import type { PokemonSuggestion, SuggestionWeights } from '../../core/api.ts';
+import type { MegaAlternative, PokemonSuggestion, SuggestionWeights } from '../../core/api.ts';
 import { DEFAULT_WEIGHTS } from '../../core/engine.ts';
 import { pct } from '../../core/i18n.ts';
 import { toId } from '../../core/id.ts';
 import { Card, EmptyState, EngineNotice, Notice, Reasons, ScoreBar } from '../components/common.tsx';
 import { Sprite } from '../components/Sprite.tsx';
 import { TypeList } from '../components/TypeBadge.tsx';
-import { runAutoComplete, runPokemon, type Safe } from '../engineBridge.ts';
+import { runAutoComplete, runMegaAlternatives, runPokemon, type Safe } from '../engineBridge.ts';
 import { useApp } from '../state.tsx';
 import { displayName, displayScore, MAX_TEAM, normalizeSet, sanitizeSet } from '../util.ts';
 
@@ -27,6 +27,7 @@ export function SuggestionsPanel() {
   const [autoError, setAutoError] = useState<Safe<unknown> | null>(null);
   const full = team.length >= MAX_TEAM;
   const res = runPokemon(bridge, engineTeam, engineKey, 12);
+  const megaAlt = runMegaAlternatives(bridge, engineTeam, engineKey, 3);
 
   // sem motor: usa os mais usados do meta que ainda não estão na equipe
   const fallback: PokemonSuggestion[] = res.ok
@@ -91,6 +92,7 @@ export function SuggestionsPanel() {
             ))}
           </ol>
         )}
+        {megaAlt.ok && megaAlt.value.length > 0 && !full && <MegaAlternatives list={megaAlt.value.filter(a => !inTeam({ species: a.species } as PokemonSuggestion))} />}
       </Card>
       <WeightsPanel />
     </>
@@ -113,6 +115,9 @@ function SuggestionCard({ s, rank, disabled, added, onAdd }: { s: PokemonSuggest
           <strong>{name}</strong>
           <TypeList types={form?.types} small />
           {setForm?.isMega && <span className="tag tag-mega">{setForm.name}</span>}
+          {!setForm?.isMega && species?.megas?.length ? (
+            <span className="tag" title="Avaliado e montado sem Mega Stone (a forma comum)">sem Mega</span>
+          ) : null}
         </div>
         <span className="sugg-score" title="Pontuação (0-100)">{score}</span>
       </div>
@@ -154,6 +159,52 @@ function SuggestionCard({ s, rank, disabled, added, onAdd }: { s: PokemonSuggest
         </button>
       </div>
     </li>
+  );
+}
+
+/** Com 2 Megas na equipe: quem seria sugerido como Mega se uma vaga fosse liberada. */
+function MegaAlternatives({ list }: { list: MegaAlternative[] }) {
+  const { dex } = useApp();
+  if (!list.length) return null;
+  const holders = list[0].replaces;
+  return (
+    <section className="mega-alt" aria-label="Sugestões se houvesse vaga de Mega">
+      <h3 className="mega-alt-title">Se houvesse vaga de Mega</h3>
+      <p className="muted small">
+        Sua equipe já tem {holders.length} Megas ({holders.join(' e ')}) e só uma Mega Evolui por batalha, então as sugestões acima
+        avaliam a forma comum. Estes entrariam entre os melhores <strong>como Mega</strong> — para usá-los, troque a Mega Stone de um
+        dos seus membros.
+      </p>
+      <ul className="sugg-list">
+        {list.map(a => {
+          const form = dex.species(a.megaForm) ?? dex.species(a.species);
+          const withMega = displayScore(a.score);
+          const without = a.scoreWithoutMega != null ? displayScore(a.scoreWithoutMega) : null;
+          return (
+            <li key={a.species} className="sugg">
+              <div className="sugg-head">
+                <Sprite species={form} name={a.species} size={40} />
+                <div className="sugg-id">
+                  <strong>{a.megaForm}</strong>
+                  <TypeList types={form?.types} small />
+                  <span className="small muted">{a.megaItem}</span>
+                </div>
+                <span className="sugg-score" title="Pontuação como Mega (0-100)">{withMega}</span>
+              </div>
+              <p className="small">
+                Como Mega: <strong>{withMega}</strong>
+                {without !== null ? (
+                  <>
+                    {' '}· sem Mega: <strong>{without}</strong>
+                  </>
+                ) : null}
+              </p>
+              <Reasons items={a.reasonsPt} max={2} />
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }
 

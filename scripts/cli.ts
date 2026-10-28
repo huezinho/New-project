@@ -9,7 +9,8 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
-  analyzeTeam, autoComplete, createEngineContext, suggestAbilities, suggestItems, suggestMoves, suggestPokemon, suggestSpreads,
+  analyzeTeam, autoComplete, createEngineContext, suggestAbilities, suggestItems, suggestMegaAlternatives, suggestMoves, suggestPokemon,
+  suggestSpreads,
 } from '../src/core/engine.ts';
 import type { Heuristics } from '../src/core/api.ts';
 import { exportTeam, parseTeam } from '../src/core/paste.ts';
@@ -57,7 +58,7 @@ async function main() {
     const detail = slot !== null && team[slot]
       ? { items: suggestItems(ctx, team, slot), abilities: suggestAbilities(ctx, team, slot), spreads: suggestSpreads(ctx, team, slot) }
       : undefined;
-    console.log(JSON.stringify({ analysis, suggestions, moveSets, detail }, null, 2));
+    console.log(JSON.stringify({ analysis, suggestions, megaAlternatives: suggestMegaAlternatives(ctx, team, 3), moveSets, detail }, null, 2));
     return;
   }
 
@@ -84,8 +85,17 @@ async function main() {
 
   line('\nSugestões de Pokémon:');
   for (const [i, s] of suggestions.entries()) {
-    line(`  ${i + 1}. ${s.species} — ${Math.round(s.score * 100)}/100`);
+    const megaTag = s.form?.mega ? ` (como ${s.form.name})` : ctx.dex.species(s.species)?.megas?.length ? ' (sem Mega)' : '';
+    line(`  ${i + 1}. ${s.species}${megaTag} — ${Math.round(s.score * 100)}/100`);
     for (const r of s.reasonsPt) line(`       · ${r}`);
+  }
+  const megaAlt = suggestMegaAlternatives(ctx, team, 3);
+  if (megaAlt.length) {
+    line(`\nSe houvesse vaga de Mega (a equipe já tem ${megaAlt[0].replaces.join(' e ')}):`);
+    for (const a of megaAlt) {
+      line(`  - ${a.megaForm} @ ${a.megaItem} — ${Math.round(a.score * 100)}/100 como Mega` +
+        (a.scoreWithoutMega != null ? ` (sem Mega: ${Math.round(a.scoreWithoutMega * 100)})` : ''));
+    }
   }
 
   if (team.length) {

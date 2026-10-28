@@ -9,7 +9,7 @@
 import { DexAccess } from '../../src/core/dex.ts';
 import { toId } from '../../src/core/id.ts';
 import type {
-  Dex, Meta, MetaArchetype, MetaCore, MetaPokemon, MetaSource, Share, SpreadShare, StatsTable, TournamentEvent,
+  Dex, Meta, MetaArchetype, MetaCore, MetaForm, MetaPokemon, MetaSource, Share, SpreadShare, StatsTable, TournamentEvent,
 } from '../../src/core/types.ts';
 import type { PatchEvent, RecordMember, TeamRecord, UsageSnapshot } from './records.ts';
 
@@ -49,6 +49,8 @@ const STATS: (keyof StatsTable)[] = ['hp', 'atk', 'def', 'spa', 'spd', 'spe'];
 
 interface Resolved {
   id: string;
+  /** Forma em batalha: id da Mega quando segura a Mega Stone da espécie, senão o id da espécie. */
+  formId: string;
   name: string;
   item?: string;
   ability?: string;
@@ -81,6 +83,38 @@ class SpeciesAcc {
   recent = { num: 0, den: 0 };
   previous = { num: 0, den: 0 };
   sources = new Set<string>();
+  /** Numeradores por forma em batalha (ex.: "salamencemega" e "salamence"); denominadores são os da espécie. */
+  forms = new Map<string, SpeciesAcc>();
+  form(id: string): SpeciesAcc {
+    let f = this.forms.get(id);
+    if (!f) this.forms.set(id, (f = new SpeciesAcc()));
+    return f;
+  }
+}
+
+/** Soma os dados de um membro de time com resultado num acumulador (espécie ou forma). */
+function addRecordMember(a: SpeciesAcc, m: Resolved, w: number, mates: Iterable<string>, r: TeamRecord, games: number) {
+  a.recW += w;
+  if (m.item) a.recSets.items.add(m.item, w);
+  if (m.ability) a.recSets.abilities.add(m.ability, w);
+  if (m.spread) a.recSets.spreads.add(m.spread, w);
+  if (m.moves.length) for (const mv of m.moves) a.recSets.moves.add(mv, w);
+  a.recSets.items.w += m.item ? w : 0;
+  a.recSets.abilities.w += m.ability ? w : 0;
+  a.recSets.spreads.w += m.spread ? w : 0;
+  a.recSets.moves.w += m.moves.length ? w : 0;
+  for (const other of mates) if (other !== m.id) a.recSets.mates.add(other, w);
+  a.recSets.mates.w += w;
+  if (games > 0) {
+    a.wins += w * (r.wins ?? 0);
+    a.games += w * games;
+    a.rawWins += r.wins ?? 0;
+    a.rawGames += games;
+  }
+  if (r.placing && (r.sourceKind === 'official' || r.sourceKind === 'online' || r.sourceKind === 'seed')) {
+    a.topCutDen += w;
+    if (r.placing <= topCutSize(r.players)) a.topCut += w;
+  }
 }
 
 export function daysBetween(a: string, b: string): number {
@@ -165,7 +199,7 @@ export function aggregate(input: AggregateInput): Meta {
     const baseId = toId(sp.baseSpecies);
     if (!dexData.species[baseId] && sp.legal[input.regulation]) formeFallback.set(baseId, sp.id);
   }
-  const resolveSpecies = (raw: string): { id: string; megaItem?: string } | null => {
+  const resolveSpecies = (raw: string): { id: string; megaItem?: string; megaId?: string } | null => {
     const name = raw.replace(/\s*♀/g, '-F').replace(/\s*♂/g, '-M');
     let id = toId(name);
     let sp = dexData.species[id];
@@ -182,7 +216,7 @@ export function aggregate(input: AggregateInput): Meta {
     if (sp.duplicateOf && dexData.species[sp.duplicateOf]) sp = dexData.species[sp.duplicateOf];
     if (sp.isMega) {
       const base = dex.baseOf(sp);
-      return { id: base.id, megaItem: sp.requiredItem };
+      return { id: base.id, megaItem: sp.requiredItem, megaId: sp.id };
     }
     id = sp.id;
     return { id };
@@ -211,7 +245,10 @@ export function aggregate(input: AggregateInput): Meta {
       const nature = dexData.natures[toId(m.nature)]?.name;
       if (nature) spread = `${nature}:${STATS.map(s => m.sp?.[s] ?? 0).join('/')}`;
     }
-    return { id: sp.id, name: dexData.species[sp.id].name, item, ability: resolveAbility(sp.id, m.ability), moves, spread };
+    const name = dexData.species[sp.id].name;
+    const megaName = item ? dexData.items[item]?.megaStone?.[name] : undefined;
+    const formId = megaName && dexData.species[toId(megaName)] ? toId(megaName) : sp.id;
+    return { id: sp.id, formId, name, item, ability: resolveAbility(sp.id, m.ability), moves, spread };
   };
 
   /* ------------------------ patches por espécie ------------------------ */
@@ -331,28 +368,9 @@ export function aggregate(input: AggregateInput): Meta {
     for (const m of members) {
       const a = get(m.id);
       const w = base * patchFactor(m.id, r.date);
-      a.recW += w;
       a.sources.add(r.eventName ?? r.source.split(':')[0]);
-      if (m.item) a.recSets.items.add(m.item, w);
-      if (m.ability) a.recSets.abilities.add(m.ability, w);
-      if (m.spread) a.recSets.spreads.add(m.spread, w);
-      if (m.moves.length) for (const mv of m.moves) a.recSets.moves.add(mv, w);
-      a.recSets.items.w += m.item ? w : 0;
-      a.recSets.abilities.w += m.ability ? w : 0;
-      a.recSets.spreads.w += m.spread ? w : 0;
-      a.recSets.moves.w += m.moves.length ? w : 0;
-      for (const other of ids) if (other !== m.id) a.recSets.mates.add(other, w);
-      a.recSets.mates.w += w;
-      if (games > 0) {
-        a.wins += w * (r.wins ?? 0);
-        a.games += w * games;
-        a.rawWins += r.wins ?? 0;
-        a.rawGames += games;
-      }
-      if (r.placing && (r.sourceKind === 'official' || r.sourceKind === 'online' || r.sourceKind === 'seed')) {
-        a.topCutDen += w;
-        if (r.placing <= topCutSize(r.players)) a.topCut += w;
-      }
+      addRecordMember(a, m, w, ids, r, games);
+      addRecordMember(a.form(m.formId), m, w, ids, r, games);
       if (r.regulation === input.regulation) {
         if (isRecent(r.date)) a.recent.num += 1;
         else if (isPrevious(r.date)) a.previous.num += 1;
@@ -413,24 +431,30 @@ export function aggregate(input: AggregateInput): Meta {
       let usage = 0;
       for (const name of names) {
         const e = s.pokemon[name];
-        const megaItem = resolveSpecies(name)?.megaItem;
+        const resolved = resolveSpecies(name);
+        const megaItem = resolved?.megaItem;
         usage += e.usage;
         const ws = w * e.usage;
-        const addAll = (t: Tally, o: Record<string, number>, resolve: (k: string) => string | undefined) => {
-          for (const [key, v] of Object.entries(o)) {
-            const id = resolve(key);
-            if (id) t.add(id, ws * v);
-          }
-          t.w += ws;
-        };
-        addAll(a.snapSets.moves, e.moves, key => (dexData.moves[toId(key)] ? toId(key) : undefined));
-        // Smogon às vezes registra a Mega Stone só na forma Mega: garantimos o item.
-        const items = megaItem && !Object.keys(e.items).some(k => toId(k) === toId(megaItem)) ? { ...e.items, [megaItem]: 1 } : e.items;
-        addAll(a.snapSets.items, items, key => (dexData.items[toId(key)] ? toId(key) : undefined));
-        // A entrada de uma Mega (Charizard-Mega-Y) traz a habilidade da Mega, não a da forma base.
-        if (!megaItem) addAll(a.snapSets.abilities, e.abilities, key => (dexData.abilities[toId(key)] ? toId(key) : undefined));
-        addAll(a.snapSets.spreads, e.spreads, key => (parseSpreadKey(key) ? key : undefined));
-        addAll(a.snapSets.mates, e.teammates, key => resolveSpecies(key)?.id);
+        // A entrada vale para a espécie e para a sua forma (Mega ou comum).
+        const formAcc = a.form(resolved?.megaId ?? sid);
+        formAcc.snapW += ws;
+        for (const target of [a, formAcc]) {
+          const addAll = (t: Tally, o: Record<string, number>, resolve: (k: string) => string | undefined) => {
+            for (const [key, v] of Object.entries(o)) {
+              const id = resolve(key);
+              if (id) t.add(id, ws * v);
+            }
+            t.w += ws;
+          };
+          addAll(target.snapSets.moves, e.moves, key => (dexData.moves[toId(key)] ? toId(key) : undefined));
+          // Smogon às vezes registra a Mega Stone só na forma Mega: garantimos o item.
+          const items = megaItem && !Object.keys(e.items).some(k => toId(k) === toId(megaItem)) ? { ...e.items, [megaItem]: 1 } : e.items;
+          addAll(target.snapSets.items, items, key => (dexData.items[toId(key)] ? toId(key) : undefined));
+          // A entrada de uma Mega (Charizard-Mega-Y) traz a habilidade da Mega, não a da forma base.
+          if (!megaItem) addAll(target.snapSets.abilities, e.abilities, key => (dexData.abilities[toId(key)] ? toId(key) : undefined));
+          addAll(target.snapSets.spreads, e.spreads, key => (parseSpreadKey(key) ? key : undefined));
+          addAll(target.snapSets.mates, e.teammates, key => resolveSpecies(key)?.id);
+        }
       }
       usage = Math.min(1, usage);
       a.snapW += w * usage;
@@ -486,6 +510,40 @@ export function aggregate(input: AggregateInput): Meta {
         winRate: p && p.games >= 5 ? shrinkWinRate(p.wins, p.games, k) : null,
       };
     });
+    // Uso, vitória e sets de cada forma (Mega x comum), com os denominadores da espécie.
+    const forms: MetaForm[] = [];
+    for (const [formId, f] of a.forms) {
+      const fu = fr + fs > 0 ? (fr * (a.recDen > 0 ? f.recW / a.recDen : 0) + fs * (a.snapDen > 0 ? f.snapW / a.snapDen : 0)) / (fr + fs) : 0;
+      const formSp = dexData.species[formId];
+      if (fu <= 0 || !formSp) continue;
+      const fmix = (key: keyof SpeciesAcc['recSets']) => mixTally(f.recSets[key], f.recSets[key].w, fr, f.snapSets[key], f.snapSets[key].w, fs);
+      const fSpreads = fmix('spreads');
+      const fMates = fmix('mates');
+      forms.push({
+        id: formId,
+        name: formSp.name,
+        mega: !!formSp.isMega,
+        item: formSp.isMega ? formSp.requiredItem : undefined,
+        share: Math.min(1, fu / usage),
+        usage: fu,
+        winRate: f.games > 0 ? shrinkWinRate(f.wins, f.games, k) : null,
+        rawWinRate: f.rawGames > 0 ? f.rawWins / f.rawGames : null,
+        games: Math.round(f.rawGames),
+        moves: toShares(fmix('moves').tally, fmix('moves').total, dexData, 'moves', 12),
+        items: toShares(fmix('items').tally, fmix('items').total, dexData, 'items', 6),
+        abilities: toShares(fmix('abilities').tally, fmix('abilities').total, dexData, 'abilities', 3),
+        spreads: [...fSpreads.tally.map]
+          .map(([key, share]) => {
+            const ps = parseSpreadKey(key);
+            return ps ? { ...ps, share } : null;
+          })
+          .filter((x): x is SpreadShare => !!x)
+          .sort((x, y) => y.share - x.share)
+          .slice(0, 4),
+        teammates: toShares(fMates.tally, fMates.total, dexData, 'species', 10),
+      });
+    }
+    forms.sort((x, y) => y.share - x.share);
     pokemon[sid] = {
       id: sid,
       name: sp.name,
@@ -505,11 +563,13 @@ export function aggregate(input: AggregateInput): Meta {
           ? { recent: a.recent.den ? a.recent.num / a.recent.den : 0, previous: a.previous.den ? a.previous.num / a.previous.den : 0 }
           : null,
       sources: [...a.sources].slice(0, 12),
+      // Só quando há mais de uma forma (espécies com Mega); senão a forma é a própria espécie.
+      ...(forms.length > 1 || forms.some(f => f.mega) ? { forms } : {}),
     };
   }
   // lift dos parceiros
   for (const p of Object.values(pokemon)) {
-    for (const t of p.teammates) {
+    for (const t of [...p.teammates, ...(p.forms ?? []).flatMap(f => f.teammates ?? [])]) {
       const u = pokemon[t.id]?.usage;
       if (u) (t as { lift?: number }).lift = t.share / u;
     }

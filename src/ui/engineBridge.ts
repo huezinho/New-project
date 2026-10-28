@@ -4,12 +4,12 @@
  * para que a UI continue funcionando mesmo se o motor falhar.
  */
 import type {
-  AbilitySuggestion, EngineContext, ItemSuggestion, MoveSetSuggestion, PokemonSuggestion, SpreadSuggestion,
+  AbilitySuggestion, EngineContext, ItemSuggestion, MegaAlternative, MoveSetSuggestion, PokemonSuggestion, SpreadSuggestion,
   SuggestionWeights, TeamAnalysis,
 } from '../core/api.ts';
 import { DexAccess } from '../core/dex.ts';
 import {
-  analyzeTeam, autoComplete, buildSet, createEngineContext, suggestAbilities, suggestItems, suggestMoves,
+  analyzeTeam, autoComplete, buildSet, createEngineContext, suggestAbilities, suggestItems, suggestMegaAlternatives, suggestMoves,
   suggestPokemon, suggestSpreads,
 } from '../core/engine.ts';
 import { toId } from '../core/id.ts';
@@ -78,6 +78,15 @@ export function runAnalysis(b: Bridge, team: Team, teamKey: string): Safe<TeamAn
 export function runPokemon(b: Bridge, team: Team, teamKey: string, limit = 12): Safe<PokemonSuggestion[]> {
   return cached(`p|${b.key}|${limit}|${teamKey}`, 'suggestPokemon', () => {
     const out = suggestPokemon(b.ctx, team, limit);
+    if (!Array.isArray(out)) throw new Error('resposta inválida');
+    return out;
+  });
+}
+
+/** Com 2 Megas na equipe: quem seria sugerido como Mega se uma vaga fosse liberada. */
+export function runMegaAlternatives(b: Bridge, team: Team, teamKey: string, limit = 3): Safe<MegaAlternative[]> {
+  return cached(`ma|${b.key}|${limit}|${teamKey}`, 'suggestMegaAlternatives', () => {
+    const out = suggestMegaAlternatives(b.ctx, team, limit);
     if (!Array.isArray(out)) throw new Error('resposta inválida');
     return out;
   });

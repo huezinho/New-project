@@ -5,7 +5,7 @@
  */
 import { DexAccess } from './dex.ts';
 import type {
-  AbilitySuggestion, DamageFieldOptions, DamageResult, EngineApi, EngineContext, Heuristics, ItemSuggestion, MatchupEntry,
+  AbilitySuggestion, DamageFieldOptions, DamageResult, EngineApi, EngineContext, Heuristics, ItemSuggestion, MatchupEntry, MegaAlternative,
   MoveSetSuggestion, PokemonSuggestion, SpreadSuggestion, SuggestionWeights, TeamAnalysis,
 } from './api.ts';
 import { analyzeTeam as analyze } from './analysis.ts';
@@ -16,7 +16,7 @@ import { autoComplete as complete } from './suggest/autocomplete.ts';
 import { buildSet as build } from './suggest/build.ts';
 import { suggestItems as items } from './suggest/items.ts';
 import { suggestMoves as moves } from './suggest/moves.ts';
-import { rankPokemon as rank, suggestPokemon as pokemon, type RankedPokemon } from './suggest/pokemon.ts';
+import { rankPokemon as rank, suggestMegaAlternatives as megaAlternatives, suggestPokemon as pokemon, type RankedPokemon } from './suggest/pokemon.ts';
 import { suggestSpreads as spreads } from './suggest/spreads.ts';
 import type { Dex, Meta, PokemonSet, Team } from './types.ts';
 import { DEFAULT_WEIGHTS } from './weights.ts';
@@ -77,6 +77,10 @@ export function buildSet(ctx: EngineContext, team: Team, species: string): Pokem
 }
 export function autoComplete(ctx: EngineContext, team: Team): Team {
   return complete(ctx, clean(team));
+}
+/** Com 2 Megas na equipe: quem seria sugerido como Mega se uma vaga fosse liberada. */
+export function suggestMegaAlternatives(ctx: EngineContext, team: Team, limit = 3): MegaAlternative[] {
+  return megaAlternatives(ctx, clean(team), limit);
 }
 /** Ranking completo de candidatos (sem montar sets). */
 export function rankPokemon(ctx: EngineContext, team: Team): RankedPokemon[] {

@@ -160,8 +160,23 @@ export interface PokemonSuggestion {
   components: ScoreComponent[];
   reasonsPt: string[];
   meta?: MetaPokemon;
+  /** Forma em que o candidato foi avaliado (Mega ou comum). */
+  form?: { name: string; mega: boolean };
   /** Set recomendado para esta equipe. */
   set: PokemonSet;
+}
+
+/** Pokémon que seria sugerido como Mega se uma das 2 vagas de Mega fosse liberada. */
+export interface MegaAlternative {
+  species: string;
+  megaItem: string;
+  megaForm: string;
+  score: number;
+  /** Nota do mesmo Pokémon sem Mega (como aparece nas sugestões normais). */
+  scoreWithoutMega: number | null;
+  /** Megas atuais da equipe que poderiam ceder a vaga. */
+  replaces: string[];
+  reasonsPt: string[];
 }
 
 export interface MoveSuggestion {

@@ -163,6 +163,27 @@ export interface SpreadShare {
   share: number;
 }
 
+/** Dados do meta de uma forma em batalha (ex.: Salamence-Mega x Salamence sem Mega). */
+export interface MetaForm {
+  id: string;
+  name: string;
+  mega: boolean;
+  /** Mega Stone da forma (só Megas). */
+  item?: string;
+  /** Fração dos sets da espécie que usam esta forma (0-1). */
+  share: number;
+  /** Fração de equipes com a espécie nesta forma. */
+  usage: number;
+  winRate: number | null;
+  rawWinRate?: number | null;
+  games: number;
+  moves: Share[];
+  items: Share[];
+  abilities: Share[];
+  spreads: SpreadShare[];
+  teammates?: (Share & { lift?: number })[];
+}
+
 export interface MetaPokemon {
   id: string;
   name: string;
@@ -184,6 +205,11 @@ export interface MetaPokemon {
   /** Tendência: uso no período recente vs anterior. */
   trend?: { recent: number; previous: number } | null;
   sources: string[];
+  /** Divisão por forma para espécies com Mega (ordenada pela fração de uso). */
+  forms?: MetaForm[];
+  /** Presente quando o objeto é a visão de uma só forma (ver metaForForm). */
+  formId?: string;
+  formShare?: number;
 }
 
 export interface MetaCore {

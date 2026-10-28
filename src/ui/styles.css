@@ -2515,3 +2515,17 @@ span.mcell {
     min-width: 0;
   }
 }
+
+/* Sugestões se houvesse vaga de Mega */
+.mega-alt {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border);
+}
+.mega-alt-title {
+  margin: 0 0 4px;
+  font-size: 0.95rem;
+}
+.mega-alt .sugg {
+  opacity: 0.95;
+}

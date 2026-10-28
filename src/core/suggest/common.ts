@@ -7,7 +7,7 @@ import type { EngineContext, RoleDef } from '../api.ts';
 import { addFieldSpeedRole, coreRoles, detectArchetypes, fieldOf, teamState, type ArchetypeHit, type TeamState } from '../analysis.ts';
 import { memberRoles, rolePhrase, type RoleMap } from '../roles.ts';
 import {
-  attackStat, baseAttack, baseBulk, isDamaging, isMegaStone, META_FORM_MIN, metaFormShare, metaOf, metaThreats, NON_COVERAGE,
+  attackStat, baseAttack, baseBulk, isDamaging, isMegaStone, metaForForm, metaOf, metaThreats, NON_COVERAGE,
   type FieldState, type Member, type ThreatProfile,
 } from '../team.ts';
 import type { MetaPokemon, MoveData, Team } from '../types.ts';
@@ -59,7 +59,7 @@ export function slotContext(ctx: EngineContext, team: Team, slot: number): SlotC
     .filter(r => !providers.get(r.id))
     .sort((a, b) => b.weight - a.weight);
   const meta = metaOf(ctx, member.species);
-  const formMeta = meta && metaFormShare(ctx, member.species, member.item, meta) >= META_FORM_MIN ? meta : undefined;
+  const formMeta = member.species ? metaForForm(ctx, member.species, member.item) : undefined;
   const otherItems = new Map<string, Member>();
   for (const m of others) if (m.itemId && !otherItems.has(m.itemId)) otherItems.set(m.itemId, m);
   return {

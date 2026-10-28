@@ -123,6 +123,62 @@ export function metaFormShare(ctx: EngineContext, species: SpeciesData, item: It
 /** Forma do set é comum o bastante no meta para herdar golpes e spreads de lá. */
 export const META_FORM_MIN = 0.25;
 
+/** Id da forma em batalha de uma espécie com um item (Mega quando é a Mega Stone dela). */
+export function battleFormId(ctx: EngineContext, species: SpeciesData, item: ItemData | undefined): string {
+  const megaName = item?.megaStone?.[species.name];
+  const mega = megaName ? ctx.dex.species(megaName) : undefined;
+  return mega?.isMega ? mega.id : species.id;
+}
+
+/**
+ * Visão do meta só com os dados de uma forma (ex.: Salamence sem Mega): uso,
+ * vitória, golpes, itens, spreads e parceiros daquela forma. Devolve undefined
+ * quando a forma praticamente não aparece no meta — aí o motor usa heurísticas
+ * em vez de herdar a popularidade da outra forma.
+ */
+export function metaForForm(ctx: EngineContext, species: SpeciesData | undefined, item: ItemData | undefined): MetaPokemon | undefined {
+  if (!species) return undefined;
+  const mp = metaOf(ctx, species);
+  if (!mp) return undefined;
+  const formId = battleFormId(ctx, species, item);
+  return memo(ctx, `metaForm:${species.id}:${formId}`, () => {
+    if (mp.forms?.length) {
+      const f = mp.forms.find(x => x.id === formId);
+      if (!f) return undefined;
+      if (f.share >= 0.97) return mp; // a espécie é praticamente só esta forma
+      return {
+        ...mp,
+        usage: f.usage,
+        winRate: f.winRate,
+        rawWinRate: f.rawWinRate,
+        games: f.games,
+        moves: f.moves,
+        items: f.items,
+        abilities: f.abilities.length ? f.abilities : mp.abilities,
+        spreads: f.spreads,
+        teammates: f.teammates ?? [],
+        topCutRate: null,
+        trend: null,
+        formShare: f.share,
+        formId,
+      };
+    }
+    // meta.json antigo (sem divisão por forma): estima pela fração de Mega Stones nos itens.
+    const share = metaFormShare(ctx, species, item, mp);
+    if (share >= 0.97) return mp;
+    if (share < META_FORM_MIN) return undefined;
+    return { ...mp, usage: mp.usage * share, formShare: share, formId };
+  });
+}
+
+/** Fração dos sets da espécie que usam alguma Mega (0 se não tem Mega). */
+export function megaShareOf(ctx: EngineContext, species: SpeciesData): number {
+  const mp = metaOf(ctx, species);
+  if (!mp) return 0;
+  if (mp.forms?.length) return mp.forms.filter(f => f.mega).reduce((s, f) => s + f.share, 0);
+  return megaOptions(ctx, species).length ? 1 - metaFormShare(ctx, species, undefined, mp) : 0;
+}
+
 export function resolveMember(ctx: EngineContext, set: PokemonSet, slot: number): Member {
   const species = ctx.dex.species(set.species);
   const form = species ? ctx.dex.battleForm(set) ?? species : undefined;
@@ -133,9 +189,10 @@ export function resolveMember(ctx: EngineContext, set: PokemonSet, slot: number)
   const meta = metaOf(ctx, species);
   let moves = (set.moves ?? []).map(m => ctx.dex.move(m)).filter((m): m is MoveData => !!m);
   let assumedMoves = false;
-  const sameForm = !!species && !!meta && metaFormShare(ctx, species, item, meta) >= META_FORM_MIN;
-  if (!moves.length && species && !(set.moves ?? []).some(Boolean) && meta?.moves?.length && sameForm) {
-    moves = meta.moves
+  // Golpes assumidos vêm só dos sets da mesma forma (Mega ou comum).
+  const formMeta = species ? metaForForm(ctx, species, item) : undefined;
+  if (!moves.length && species && !(set.moves ?? []).some(Boolean) && formMeta?.moves?.length) {
+    moves = formMeta.moves
       .filter(m => ctx.dex.canLearn(species, m.id))
       .slice(0, 4)
       .map(m => ctx.dex.move(m.id))
@@ -228,7 +285,7 @@ export function maxSpeed(form: SpeciesData): number {
 
 /** Set provável de um Pokémon do meta (item, habilidade, spread e golpes mais usados). */
 export function likelySet(ctx: EngineContext, mp: MetaPokemon): PokemonSet {
-  return memo(ctx, `likely:${mp.id}`, () => {
+  return memo(ctx, `likely:${mp.id}:${mp.formId ?? ''}`, () => {
     const species = ctx.dex.species(mp.id);
     const item = mp.items?.find(i => ctx.dex.item(i.id)?.legal[ctx.dex.regulation])?.name;
     const set: PokemonSet = { species: species?.name ?? mp.name, item, sp: emptySP(), moves: [] };
