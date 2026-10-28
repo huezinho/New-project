@@ -84,7 +84,7 @@ async function main() {
 
   line('\nSugestões de Pokémon:');
   for (const [i, s] of suggestions.entries()) {
-    line(`  ${i + 1}. ${s.species} — ${s.score.toFixed(1)} pts`);
+    line(`  ${i + 1}. ${s.species} — ${Math.round(s.score * 100)}/100`);
     for (const r of s.reasonsPt) line(`       · ${r}`);
   }
 

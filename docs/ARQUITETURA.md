@@ -47,9 +47,13 @@ Taxa de vitória usa encolhimento bayesiano: `(V + k·0,5) / (J + k)` com `k = 2
 - `dex.ts`, `typechart.ts`, `stats.ts`, `paste.ts`: acesso aos dados, tabela de tipos com habilidades (Levitate, Storm Drain...), fórmula de atributos do Champions (66 SP, máx. 32 por atributo) e import/export no formato do Showdown.
 - `roles.ts`: detecta papéis (controle de velocidade, Fake Out, Intimidate, redirecionamento, Wide Guard, setters de clima/terreno, Trick Room...).
 - `analysis.ts`: fraquezas/resistências da equipe, cobertura ofensiva, papéis faltando, arquétipo, tiers de velocidade, ameaças do meta e problemas (Item Clause, SP inválido...).
-- `suggest/*.ts`: sugestões de Pokémon, golpes, itens, habilidades e spreads **no contexto da equipe**, sempre com justificativas em português.
-- `damage.ts`: cálculos com `@smogon/calc` (geração 0 = Champions).
-- `engine.ts`: implementa a interface `EngineApi` de `api.ts`.
+- `team.ts`: resolve cada membro na forma de batalha (Mega), atributos, tipos de ataque, ameaças do meta e set provável de cada ameaça.
+- `suggest/pokemon.ts`: ranking de candidatos (`rankPokemon`) e sugestões com set completo (`suggestPokemon`).
+- `suggest/moves.ts`: golpes no contexto da equipe, escolha gulosa dos 4, comparação com os mais usados e explicação de cada troca.
+- `suggest/items.ts`, `abilities.ts`, `spreads.ts`: itens (Item Clause, Megas), habilidades e spreads de SP (meta, benchmarks de velocidade, Trick Room, Tailwind, bulk).
+- `suggest/build.ts` e `autocomplete.ts`: set completo para uma espécie na equipe e preenchimento automático até 6 membros, preservando as escolhas do usuário.
+- `damage.ts`: cálculos com `@smogon/calc` (geração 0 = Champions) e confrontos rápidos contra as ameaças do meta.
+- `weights.ts`: pesos padrão dos componentes; `engine.ts`: implementa a interface `EngineApi` de `api.ts`.
 
 ### Pontuação de sugestões de Pokémon
 `score = Σ peso_i × componente_i`, componentes normalizados 0–1:

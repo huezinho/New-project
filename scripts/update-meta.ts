@@ -67,18 +67,22 @@ async function main() {
   const formats = dex.formats.flatMap(f => [{ id: f.id, regulation: f.regulation }, ...(f.bo3Id ? [{ id: f.bo3Id, regulation: f.regulation }] : [])]);
 
   if (!offline) {
+    let smogon: UsageSnapshot[] = [];
     try {
-      let smogon = await fetchSmogonSnapshots(formats, { months });
-      if (!smogon.length) {
-        console.warn('[meta] smogon.com sem dados; tentando o espelho no GitHub');
-        smogon = await fetchSmogonMirrorSnapshots(formats, { months: Math.min(months, 3) });
-      }
-      snapshots.push(...smogon);
-      if (!smogon.length) notes.push('Smogon stats: nenhum arquivo encontrado para os formatos do Champions no período.');
+      smogon = await fetchSmogonSnapshots(formats, { months });
     } catch (err) {
-      notes.push(`Smogon stats indisponível: ${(err as Error).message}`);
-      console.warn(`[meta] smogon falhou: ${(err as Error).message}`);
+      console.warn(`[meta] smogon.com indisponível: ${(err as Error).message}`);
     }
+    if (!smogon.length) {
+      console.warn('[meta] smogon.com sem dados; tentando o espelho no GitHub');
+      try {
+        smogon = await fetchSmogonMirrorSnapshots(formats, { months: Math.min(months, 3) });
+      } catch (err) {
+        console.warn(`[meta] espelho da Smogon falhou: ${(err as Error).message}`);
+      }
+    }
+    snapshots.push(...smogon);
+    if (!smogon.length) notes.push('Smogon stats indisponível (site e espelho): usando apenas os dados semente de uso do ladder.');
 
     try {
       const formatMap = Object.fromEntries(formats.map(f => [f.id, f.regulation]));

@@ -316,8 +316,13 @@ function evaluate(env: RankEnv, move: MoveData): Candidate {
 
   // Uso no meta
   if (env.hasMoveMeta) {
-    const v = ruleWeight(ctx, 'usage', 0.8) * Math.min(1, usage / 0.6);
-    add('usage', v, `Usado em ${pctPt(usage)} dos sets de ${env.speciesName} no meta.`);
+    // Satura em 60%, mas golpes quase universais (ex.: 99%) ganham um extra:
+    // só são trocados quando a equipe tem uma necessidade forte.
+    const core = Math.max(0, (usage - 0.6) / 0.4) ** 1.5;
+    const v = ruleWeight(ctx, 'usage', 0.8) * Math.min(1, usage / 0.6) + ruleWeight(ctx, 'usage-core', 0.35) * core;
+    add('usage', v, usage >= 0.85
+      ? `Golpe essencial: usado em ${pctPt(usage)} dos sets de ${env.speciesName} no meta.`
+      : `Usado em ${pctPt(usage)} dos sets de ${env.speciesName} no meta.`);
   }
 
   // Valor intrínseco
@@ -515,7 +520,10 @@ function dynamicParts(env: RankEnv, c: Candidate, pk: Picked, slotIndex: number)
   if (c.damaging && c.dmg) {
     const same = picked.find(p => p.damaging && p.dmg && p.dmg.type === c.dmg!.type);
     if (same) {
-      const soft = same.dmg!.spread !== c.dmg.spread || same.move.priority !== c.move.priority ? 0.5 : 1;
+      // Golpe de prioridade/condicional (ex.: Sucker Punch) não substitui o STAB principal
+      // confiável do mesmo tipo (ex.: Kowtow Cleave): quase não conta como redundância.
+      const complementsPriority = same.move.priority > 0 && c.move.priority <= 0 && c.dmg.stab;
+      const soft = complementsPriority ? 0.1 : same.dmg!.spread !== c.dmg.spread || same.move.priority !== c.move.priority ? 0.5 : 1;
       add('redundancy', -ruleWeight(ctx, 'redundancy-type', 0.3) * soft, `Mesmo tipo (${TYPE_PT[c.dmg.type]}) de ${same.move.name}.`);
     }
   }
