@@ -153,7 +153,7 @@ function RegulationCard() {
         <div className="reg-window">
           <div className="row-between">
             <span>
-              Vigência: <strong>{formatDate(new Date(start).toISOString())}</strong> a <strong>{formatDate(new Date(end).toISOString())}</strong>
+              Vigência: <strong>{formatDate(win?.start ?? info?.start)}</strong> a <strong>{formatDate(win?.end ?? info?.end)}</strong>
             </span>
             {daysLeft !== null && (
               <span className={`small ${daysLeft <= 14 && daysLeft > 0 ? 'bad-text' : 'muted'}`}>

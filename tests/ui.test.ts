@@ -6,9 +6,10 @@ import type { Dex } from '../src/core/types.ts';
 import { checkMeta, checkPatches, checkRegulations } from '../src/ui/data.ts';
 import { eventNamePt, locationPt } from '../src/ui/eventNames.ts';
 import { simpleDefensive, simpleSpeed } from '../src/ui/fallback.ts';
+import { tabFromHash } from '../src/ui/hooks.ts';
 import { sanitizeStore } from '../src/ui/storage.ts';
 import {
-  formatLooseDate, formatMult, illegalMoves, itemClauseConflicts, itemsForSpecies, looseDateRange, matchesQuery, normalizeSet,
+  formatDate, formatLooseDate, formatMult, illegalMoves, itemClauseConflicts, itemsForSpecies, looseDateRange, matchesQuery, normalizeSet,
   repeatedMoves, sanitizeSP, setSPValue, speciesClauseConflicts, speedRows, spriteId,
 } from '../src/ui/util.ts';
 
@@ -149,6 +150,29 @@ describe('UI: revisão (bugs corrigidos)', () => {
     expect(speedRows(entries, 'normal').map(r => r.eff)).toEqual([169, 160, 126, 80]);
     expect(speedRows(entries, 'tailwind').map(r => r.eff)).toEqual([320, 252, 169, 160]);
     expect(speedRows(entries, 'trickroom').map(r => r.eff)).toEqual([80, 126, 169]);
+  });
+
+  it('hash malformado na URL não derruba o app', () => {
+    const tabs = ['equipe', 'analise', 'meta'] as const;
+    expect(tabFromHash('#analise', tabs, 'equipe')).toBe('analise');
+    expect(tabFromHash('#%', tabs, 'equipe')).toBe('equipe');
+    expect(tabFromHash('#%E0%A4%A', tabs, 'equipe')).toBe('equipe');
+    expect(tabFromHash('#nada', tabs, 'equipe')).toBe('equipe');
+    expect(tabFromHash('', tabs, 'meta')).toBe('meta');
+  });
+
+  it('datas sem hora não voltam um dia no fuso do Brasil', () => {
+    const tz = process.env.TZ;
+    process.env.TZ = 'America/Sao_Paulo';
+    try {
+      expect(formatDate('2026-10-26')).toBe('26/10/2026');
+      expect(formatLooseDate('2026-04-08')).toBe('08/04/2026');
+      // com hora continua no horário local (02:00 UTC = 23:00 do dia anterior em Brasília)
+      expect(formatDate('2026-09-09T02:00:00Z')).toBe('08/09/2026');
+    } finally {
+      if (tz === undefined) delete process.env.TZ;
+      else process.env.TZ = tz;
+    }
   });
 
   it('meta.json malformado não quebra a interface', () => {

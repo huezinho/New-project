@@ -40,7 +40,7 @@ export class DexAccess {
 
   /** Espécies escolhíveis no team builder (exclui formas só de batalha, como Megas). */
   selectableSpecies(): SpeciesData[] {
-    return Object.values(this.data.species).filter(s => s.legal[this.regulation] && !s.isMega && !s.battleOnly);
+    return Object.values(this.data.species).filter(s => s.legal[this.regulation] && !s.isMega && !s.battleOnly && !s.duplicateOf);
   }
 
   isLegal(species: SpeciesData | undefined): boolean {
@@ -54,13 +54,13 @@ export class DexAccess {
   /** Golpes que a espécie aprende (Megas usam o learnset da forma base). */
   learnset(species: SpeciesData | undefined): MoveData[] {
     if (!species) return [];
-    const base = species.isMega && species.baseSpecies ? this.species(species.baseSpecies) ?? species : species;
+    const base = species.isMega ? this.baseOf(species) : species;
     return base.learnset.map(id => this.data.moves[id]).filter((m): m is MoveData => !!m);
   }
 
   canLearn(species: SpeciesData | undefined, move: string): boolean {
     if (!species) return false;
-    const base = species.isMega && species.baseSpecies ? this.species(species.baseSpecies) ?? species : species;
+    const base = species.isMega ? this.baseOf(species) : species;
     return base.learnset.includes(toId(move));
   }
 

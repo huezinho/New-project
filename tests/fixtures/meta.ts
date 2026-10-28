@@ -163,7 +163,7 @@ export function sampleMeta(dex: Dex): Meta {
       },
       {
         id: 'archaludon', usage: 0.12, winRate: 0.5, games: 200,
-        moves: [['electroshot', 0.9], ['protect', 0.8], ['dracometeor', 0.7], ['bodypress', 0.4]],
+        moves: [['electroshot', 0.9], ['protect', 0.8], ['dracometeor', 0.7], ['flashcannon', 0.4]],
         items: [['sitrusberry', 0.3]], abilities: [['stamina', 0.9]],
         spreads: [{ nature: 'Modest', sp: { hp: 32, spa: 32, spd: 2 }, share: 0.4 }],
       },

@@ -1,9 +1,10 @@
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { aggregate, decay, regulationWeight, shrinkWinRate } from '../scripts/lib/aggregate.ts';
 import { parsePackedTeam, parseReplayLog } from '../scripts/sources/replays.ts';
 import { chaosToSnapshot } from '../scripts/sources/smogon.ts';
-import type { TeamRecord } from '../scripts/lib/records.ts';
+import { fetchSmogonMirrorSnapshots } from '../scripts/sources/mirrors.ts';
+import type { TeamRecord, UsageEntry, UsageSnapshot } from '../scripts/lib/records.ts';
 import type { Dex } from '../src/core/types.ts';
 
 const dex = JSON.parse(readFileSync('public/data/dex.json', 'utf8')) as Dex;
@@ -61,6 +62,45 @@ describe('aggregate', () => {
     });
     expect(patched.pokemon.pelipper.usage).toBeLessThan(unpatched.pokemon.pelipper.usage);
   });
+
+  const entry = (usage: number, extra: Partial<UsageEntry> = {}): UsageEntry => ({ usage, moves: {}, items: {}, abilities: {}, spreads: {}, teammates: {}, ...extra });
+  const snap = (regulation: string, pokemon: Record<string, UsageEntry>): UsageSnapshot => ({
+    source: `smogon:${regulation}`, sourceKind: 'ladder', label: regulation, date: '2026-10-20', regulation, battles: 5000, pokemon,
+  });
+
+  it('uso só conta amostras de regulações em que a espécie era legal', () => {
+    // Rillaboom é ilegal na M-B: times e ladder da M-B não podem diluir o uso dele na M-C.
+    expect(dex.species.rillaboom.legal['M-B']).toBe(false);
+    const withR = ['Incineroar', 'Rillaboom', 'Garchomp', 'Sneasler'];
+    const without = ['Incineroar', 'Kingambit', 'Garchomp', 'Sneasler'];
+    const recs = [
+      ...[1, 2, 3].map(() => team(withR, 5, 3, '2026-10-20')),
+      ...[1, 2, 3].map(() => team(without, 5, 3, '2026-10-20')),
+      ...[1, 2, 3, 4].map(() => team(without, 5, 3, '2026-10-20', { regulation: 'M-B' })),
+    ];
+    const snapshots = [snap('M-C', { Rillaboom: entry(0.5), Incineroar: entry(0.5) }), snap('M-B', { Incineroar: entry(0.6) })];
+    const m = aggregate({ dex, regulation: 'M-C', regulationOrder: ['M-C', 'M-B'], snapshots, records: recs, patches: [], now: '2026-10-27' });
+    expect(m.pokemon.rillaboom.usage).toBeCloseTo(0.5, 6);
+    expect(m.cores.find(c => c.members.join() === 'incineroar,rillaboom')?.usage).toBeCloseTo(0.5, 6);
+    // Quem era legal nas duas regulações continua misturando as duas (M-B com peso 0,35).
+    const recOnly = aggregate({ dex, regulation: 'M-C', regulationOrder: ['M-C', 'M-B'], snapshots: [], records: recs, patches: [], now: '2026-10-27' });
+    expect(recOnly.pokemon.kingambit.usage).toBeCloseTo((3 + 0.35 * 4) / (6 + 0.35 * 4), 6);
+    expect(recOnly.pokemon.rillaboom.usage).toBeCloseTo(0.5, 6);
+  });
+
+  it('habilidade da forma Mega não entra como habilidade da espécie base', () => {
+    const megaY = (ability: string) => ({ species: 'Charizard-Mega-Y', item: 'Charizardite Y', ability, moves: ['Heat Wave'] });
+    const recs = [1, 2, 3].map((_, i) => ({
+      ...team(['Incineroar', 'Garchomp', 'Sneasler'], 4, 4, '2026-10-20'),
+      pokemon: [...team(['Incineroar', 'Garchomp', 'Sneasler'], 0, 0, '2026-10-20').pokemon, megaY(i ? 'Solar Power' : 'Drought')],
+    }));
+    const snapshots = [snap('M-C', { 'Charizard-Mega-Y': entry(0.2, { abilities: { drought: 1 }, items: { charizarditey: 1 } }), Incineroar: entry(0.5) })];
+    const m = aggregate({ dex, regulation: 'M-C', regulationOrder: ['M-C'], snapshots, records: recs, patches: [], now: '2026-10-27' });
+    expect(m.pokemon.charizard.abilities.map(a => a.id)).toEqual(['solarpower']);
+    expect(m.pokemon.charizard.abilities[0].share).toBeCloseTo(1);
+    // O time mostrado no evento mantém o que o jogador listou.
+    expect(m.events[0].teams.some(t => t.pokemon.some(p => p.ability === 'Drought'))).toBe(true);
+  });
 });
 
 describe('fontes', () => {
@@ -85,5 +125,24 @@ describe('fontes', () => {
     expect(parsed.winner).toBe('p2');
     expect(parsed.teams.p1).toHaveLength(2);
     expect(parsed.teams.p2[0].species).toBe('Garchomp');
+  });
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('espelho da Smogon: só meses já publicados e falha num mês não derruba os outros', async () => {
+    const asked: string[] = [];
+    vi.stubGlobal('fetch', async (url: string) => {
+      asked.push(url);
+      if (url.includes('/2026-08/')) return new Response('forbidden', { status: 403 });
+      if (url.endsWith('/2026-09/fmt/1760/_index.json')) {
+        return new Response(JSON.stringify({ info: { 'number of battles': 4000 }, pokemon: { Rillaboom: { usage: 0.47, raw: 100 } } }));
+      }
+      if (url.endsWith('/2026-09/fmt/1760/Rillaboom.json')) return new Response(JSON.stringify({ Abilities: { grassysurge: 10 }, Moves: { fakeout: 10 } }));
+      return new Response('not found', { status: 404 });
+    });
+    const snaps = await fetchSmogonMirrorSnapshots([{ id: 'fmt', regulation: 'M-C' }], { months: 2, now: new Date('2026-10-28T12:00:00Z'), log: () => {} });
+    expect([...new Set(asked.map(u => /stats\/(\d{4}-\d{2})\//.exec(u)?.[1]))]).toEqual(['2026-08', '2026-09']);
+    expect(snaps.map(s => s.period)).toEqual(['2026-09']);
+    expect(snaps[0].pokemon.Rillaboom.usage).toBeCloseTo(0.47);
   });
 });

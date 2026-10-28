@@ -346,7 +346,9 @@ const TIER_PT: Record<string, string> = {
 
 function Events() {
   const { data } = useApp();
-  const regs = [...new Set(data.meta.events.map(e => e.regulation))].sort().reverse();
+  // Regulação atual primeiro, depois as demais do Champions e por fim a era SV.
+  const regRank = (r: string) => (r === data.meta.regulation ? 0 : r.startsWith('SV') ? 2 : 1);
+  const regs = [...new Set(data.meta.events.map(e => e.regulation))].sort((a, b) => regRank(a) - regRank(b) || b.localeCompare(a));
   const tiers = [...new Set(data.meta.events.map(e => e.tier))];
   const [reg, setReg] = useState('');
   const [tier, setTier] = useState('');

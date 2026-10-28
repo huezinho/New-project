@@ -86,12 +86,14 @@ function MemberEditor({ slot, set }: { slot: number; set: PokemonSet }) {
   const ready = toId(engineTeam[slot]?.species) === toId(set.species) && !!species;
   const speciesOptions = useSpeciesOptions(slot);
   const megaCount = team.filter(s => isMegaStone(dex.item(s.item))).length;
-  const [applied, setApplied] = useState<'ok' | 'fallback' | null>(null);
+  // confirmação presa à espécie: remover/trocar o membro do slot não a mostra para outro Pokémon
+  const [appliedTo, setAppliedTo] = useState<{ species: string; kind: 'ok' | 'fallback' } | null>(null);
+  const applied = appliedTo && appliedTo.species === toId(set.species) ? appliedTo.kind : null;
   useEffect(() => {
-    if (!applied) return;
-    const t = window.setTimeout(() => setApplied(null), 5000);
+    if (!appliedTo) return;
+    const t = window.setTimeout(() => setAppliedTo(null), 5000);
     return () => window.clearTimeout(t);
-  }, [applied]);
+  }, [appliedTo]);
 
   // set completo (golpes, item, habilidade, natureza e SP) montado para o resto da equipe
   const applyFullSet = () => {
@@ -99,7 +101,7 @@ function MemberEditor({ slot, set }: { slot: number; set: PokemonSet }) {
     const others = team.filter((_, i) => i !== slot);
     const { set: built, fromEngine } = runBuildSet(bridge, others, species.name);
     updateSet(slot, { item: built.item, ability: built.ability, nature: built.nature, sp: built.sp, moves: built.moves });
-    setApplied(fromEngine ? 'ok' : 'fallback');
+    setAppliedTo({ species: toId(set.species), kind: fromEngine ? 'ok' : 'fallback' });
   };
 
   return (

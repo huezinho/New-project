@@ -7,7 +7,7 @@
  *   npm run update:dex                       # baixa do GitHub (branch master)
  *   SHOWDOWN_DIR=../pokemon-showdown npm run update:dex   # usa checkout local
  */
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { createShowdownSource, resolveGithubCommit, type ShowdownSource } from './lib/showdownSource.ts';
 import { applyMod, clean, extractExports, extractTable, type Literal, type LiteralTable } from './lib/tsLiteral.ts';
@@ -128,11 +128,27 @@ function isBanned(entry: { name: string; id: string; tags?: string[] }, banlist:
   return false;
 }
 
-function speciesLegal(sp: Entry, fd: Entry | undefined, format: FormatInfo): boolean {
+/**
+ * Entrada de formats-data da espécie com a regra do Showdown (sim/dex-species.ts):
+ * uma forma sem entrada própria (ex.: Meowstic-F) herda o tier da forma de origem
+ * (battleOnly) ou da espécie base. Formas cosméticas (Vivillon-Polar...) não têm
+ * dados próprios e ficam de fora.
+ */
+function formatsDataOf(table: LiteralTable, id: string, sp: Entry): Entry | undefined {
+  const own = table[id];
+  const baseName = str(sp.baseSpecies);
+  if (own || !baseName || sp.isCosmeticForme === true) return own;
+  const from = str(Array.isArray(sp.battleOnly) ? sp.battleOnly[0] : sp.battleOnly) ?? baseName;
+  const parent = table[toId(from)];
+  if (!parent) return undefined;
+  const tier = str(parent.tier) ?? 'Illegal';
+  return { tier, doublesTier: str(parent.doublesTier) ?? tier };
+}
+
+function speciesLegal(sp: Entry, fd: Entry | undefined, format: FormatInfo, tags: string[]): boolean {
   const nonstandard = (fd && fd.isNonstandard) ?? sp.isNonstandard;
   if (nonstandard) return false;
   if (!fd || str(fd.tier) === 'Illegal') return false;
-  const tags = arr(sp.tags).filter((t): t is string => typeof t === 'string');
   const flat = format.ruleset.some(r => toId(r) === 'flatrules');
   if (flat && tags.some(t => t === 'Mythical' || t === 'Restricted Legendary')) return false;
   return !isBanned({ name: str(sp.name) ?? '', id: toId(sp.name), tags }, format.banlist);
@@ -249,6 +265,9 @@ async function main() {
   if (!pokedexText || !movesText || !formatsText || !typechartText) throw new Error('Arquivos essenciais do Showdown não encontrados');
 
   const pokedex = extractTable(pokedexText);
+  // Como no Showdown, a forma herda as tags da espécie base (ex.: Restricted Legendary).
+  const tagsOf = (sp: Entry): string[] =>
+    arr(sp.tags ?? (str(sp.baseSpecies) ? pokedex[toId(sp.baseSpecies)]?.tags : undefined)).filter((t): t is string => typeof t === 'string');
   const base: ModTables = {
     formatsData: extractTable(formatsDataText ?? ''),
     moves: extractTable(movesText),
@@ -277,7 +296,7 @@ async function main() {
     const t = modTables.get(f.regulation)!;
     const legal = new Set<string>();
     for (const [id, sp] of Object.entries(pokedex)) {
-      if (speciesLegal(sp, t.formatsData[id], f)) legal.add(id);
+      if (speciesLegal(sp, formatsDataOf(t.formatsData, id, sp), f, tagsOf(sp))) legal.add(id);
     }
     legalBy.set(f.regulation, legal);
   }
@@ -295,7 +314,9 @@ async function main() {
     if (own) for (const move of Object.keys(own)) out.add(move);
     const parents: string[] = [];
     if (sp) {
-      if (str(sp.prevo)) parents.push(toId(sp.prevo));
+      // No Champions o Showdown não herda golpes da pré-evolução (learnsetParent),
+      // salvo para uma espécie base sem learnset próprio.
+      if (str(sp.prevo) && (!main.isChampions || (!own && !str(sp.baseSpecies)))) parents.push(toId(sp.prevo));
       if (str(sp.changesFrom)) parents.push(toId(sp.changesFrom));
       const battleOnly = sp.battleOnly;
       if (typeof battleOnly === 'string') parents.push(toId(battleOnly));
@@ -308,14 +329,15 @@ async function main() {
   const species: Record<string, SpeciesData> = {};
   for (const id of anyLegal) {
     const sp = pokedex[id];
-    const fd = main.formatsData[id] ?? {};
+    const fd = formatsDataOf(main.formatsData, id, sp) ?? {};
     const name = str(sp.name)!;
     const legal: Record<string, boolean> = {};
     for (const f of formats) legal[f.regulation] = legalBy.get(f.regulation)!.has(id);
     const abilities: SpeciesData['abilities'] = {};
     const ab = obj(sp.abilities) ?? {};
     for (const slot of ['0', '1', 'H', 'S'] as const) if (str(ab[slot])) abilities[slot] = str(ab[slot]);
-    const isMega = str(sp.forme)?.startsWith('Mega') ?? false;
+    // Igual ao Showdown: "Mega", "Mega-X", "Mega-Z", mas também "M-Mega"/"F-Mega" (Meowstic).
+    const isMega = str(sp.forme)?.includes('Mega') ?? false;
     const entry: SpeciesData = {
       id,
       name,
@@ -332,13 +354,25 @@ async function main() {
     if (str(sp.requiredItem)) entry.requiredItem = str(sp.requiredItem);
     if (sp.battleOnly) entry.battleOnly = sp.battleOnly as string | string[];
     if (isMega) entry.isMega = true;
-    const tags = arr(sp.tags).filter((t): t is string => typeof t === 'string');
+    const tags = tagsOf(sp);
     if (tags.length) entry.tags = tags;
     if (str(fd.tier)) entry.tier = str(fd.tier);
     if (str(fd.doublesTier)) entry.doublesTier = str(fd.doublesTier);
     const others = arr(sp.otherFormes).map(toId).filter(o => anyLegal.has(o));
     if (others.length) entry.otherFormes = others;
     species[id] = entry;
+  }
+
+  // Formas idênticas à base em batalha (ex.: Sinistcha-Masterpiece, Vivillon-Fancy):
+  // continuam legais (importação funciona), mas não aparecem duplicadas no builder.
+  for (const entry of Object.values(species)) {
+    if (!entry.baseSpecies || entry.isMega || entry.battleOnly) continue;
+    const base = species[toId(entry.baseSpecies)];
+    if (!base || base === entry) continue;
+    const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+    if (same(entry.types, base.types) && same(entry.baseStats, base.baseStats) && same(entry.abilities, base.abilities) && same(entry.learnset, base.learnset)) {
+      entry.duplicateOf = base.id;
+    }
   }
 
   // ----------------------------- Itens ------------------------------
@@ -380,10 +414,12 @@ async function main() {
   const usedMoves = new Set<string>();
   for (const sp of Object.values(species)) for (const m of sp.learnset) usedMoves.add(m);
   const moves: Record<string, MoveData> = {};
+  // O Champions limita o PP base a 20 (init() de data/mods/champions/scripts.ts).
+  const ppOf = (m: Entry) => Math.min(num(m.pp) ?? 0, main.isChampions ? 20 : 64);
   for (const id of availableMoves) {
     if (!usedMoves.has(id) && id !== 'struggle') continue;
     const m = main.moves[id];
-    const basePP = Math.min(num(m.pp) ?? 0, main.isChampions ? 20 : 64);
+    const basePP = ppOf(m);
     const d = textFor(movesDesc, id);
     const move: MoveData = {
       id,
@@ -450,7 +486,7 @@ async function main() {
     for (const field of ['basePower', 'accuracy', 'type', 'category', 'priority', 'target'] as const) {
       if (JSON.stringify(sv[field]) !== JSON.stringify(m[field])) changes.push(change('move', id, name, field, clean(sv[field]), clean(m[field])));
     }
-    if ((num(sv.pp) ?? 0) !== (num(m.pp) ?? 0)) changes.push(change('move', id, name, 'pp', num(sv.pp), num(m.pp)));
+    if ((num(sv.pp) ?? 0) !== ppOf(m)) changes.push(change('move', id, name, 'pp', num(sv.pp), ppOf(m)));
     const fa = flagsOf(sv), fb = flagsOf(m);
     if (fa.join() !== fb.join()) changes.push(change('move', id, name, 'flags', fa, fb));
     const ca = moveEffects(sv).secondaryChance, cb = moveEffects(m).secondaryChance;
@@ -500,6 +536,16 @@ async function main() {
 
   const out = join(process.cwd(), 'public', 'data', 'dex.json');
   mkdirSync(dirname(out), { recursive: true });
+  // Mantém a data anterior se nada mudou, para o workflow diário não gerar commits vazios.
+  if (existsSync(out)) {
+    try {
+      const prev = JSON.parse(readFileSync(out, 'utf8')) as Dex;
+      const strip = (d: Dex) => JSON.stringify({ ...d, generatedAt: '', source: { ...d.source, commit: null } });
+      if (strip(prev) === strip(dex)) dex.generatedAt = prev.generatedAt;
+    } catch {
+      // arquivo anterior inválido: sobrescreve
+    }
+  }
   writeFileSync(out, JSON.stringify(dex));
   const legalNow = Object.values(species).filter(s => s.legal[current.regulation] && !s.battleOnly).length;
   const megasNow = Object.values(species).filter(s => s.legal[current.regulation] && s.isMega).length;

@@ -37,8 +37,14 @@ jobs:
         env:
           SHOWDOWN_DIR: .cache/pokemon-showdown
       - name: Atualizar meta (uso, vitórias, torneios)
-        run: npm run update:meta -- --replays=${{ github.event.inputs.replays || '300' }}
+        # O input passa por variável de ambiente e é validado (evita injeção no shell).
+        run: |
+          case "$REPLAYS" in
+            ''|*[!0-9]*) REPLAYS=300 ;;
+          esac
+          npm run update:meta -- --replays="$REPLAYS"
         env:
+          REPLAYS: ${{ github.event.inputs.replays || '300' }}
           LIMITLESS_API_KEY: ${{ secrets.LIMITLESS_API_KEY }}
       - run: npm test
       - name: Commit se houver mudanças
@@ -51,4 +57,5 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add public/data
           git commit -m "Dados atualizados automaticamente ($(date -u +%Y-%m-%d))"
+          git pull --rebase
           git push

@@ -94,8 +94,18 @@ function Shell() {
     goTab(TABS[next]);
     tabRefs.current[TABS[next]]?.focus();
   };
+  const navRef = useRef<HTMLElement>(null);
+  const mainRef = useRef<HTMLElement>(null);
+  const shownTab = useRef(tab);
   useEffect(() => {
     document.title = `${TAB_LABEL[tab]} · Champions VGC Builder`;
+    if (shownTab.current === tab) return;
+    shownTab.current = tab;
+    // a rolagem da aba anterior não vale para a nova: volta ao início do conteúdo (abas fixas no topo)
+    const main = mainRef.current;
+    if (!main) return;
+    const top = Math.max(0, main.getBoundingClientRect().top + window.scrollY - (navRef.current?.offsetHeight ?? 0));
+    if (window.scrollY > top) window.scrollTo(0, top);
   }, [tab]);
 
   return (
@@ -104,7 +114,7 @@ function Shell() {
         Pular para o conteúdo
       </a>
       <Header onImport={() => setModal('import')} onExport={() => setModal('export')} />
-      <nav className="tabs" aria-label="Seções">
+      <nav className="tabs" aria-label="Seções" ref={navRef}>
         <div className="tabs-inner" role="tablist" aria-label="Seções do app" onKeyDown={onTabKey}>
           {TABS.map(t => (
             <button
@@ -126,7 +136,7 @@ function Shell() {
           ))}
         </div>
       </nav>
-      <main id="conteudo" className="content" role="tabpanel" aria-labelledby={`tab-${tab}`} tabIndex={-1}>
+      <main id="conteudo" className="content" role="tabpanel" aria-labelledby={`tab-${tab}`} tabIndex={-1} ref={mainRef}>
         <ErrorBoundary resetKey={tab} what={`A aba ${TAB_LABEL[tab]}`}>
           {tab === 'equipe' && <TeamTab />}
           {tab === 'analise' && <AnalysisTab />}

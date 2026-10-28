@@ -179,6 +179,7 @@ export function aggregate(input: AggregateInput): Meta {
       else if (!svContext) unknown.add(name);
       return null;
     }
+    if (sp.duplicateOf && dexData.species[sp.duplicateOf]) sp = dexData.species[sp.duplicateOf];
     if (sp.isMega) {
       const base = dex.baseOf(sp);
       return { id: base.id, megaItem: sp.requiredItem };
@@ -194,7 +195,10 @@ export function aggregate(input: AggregateInput): Meta {
       return sp.abilities[slot] ? toId(sp.abilities[slot]) : undefined;
     }
     const id = toId(raw);
-    return dexData.abilities[id] ? id : undefined;
+    if (!dexData.abilities[id]) return undefined;
+    // Só habilidades da própria espécie: um time listado pela forma Mega (Charizard-Mega-Y)
+    // pode trazer a habilidade da Mega (Drought), que não diz nada da forma base.
+    return !sp || Object.values(sp.abilities).some(a => toId(a) === id) ? id : undefined;
   };
   const resolveMember = (m: RecordMember): Resolved | null => {
     const sp = resolveSpecies(m.species);
@@ -229,6 +233,7 @@ export function aggregate(input: AggregateInput): Meta {
         note(res.id, res.id);
         res.moves.forEach(x => note(res.id, x));
         if (res.ability) note(res.id, res.ability);
+        if (m.ability) note(res.id, toId(m.ability)); // inclui a habilidade da Mega
         if (res.item) note(res.id, res.item);
       }
     }
@@ -278,24 +283,43 @@ export function aggregate(input: AggregateInput): Meta {
     .filter(x => x.members.length >= 4);
 
   const allSpecies = new Set<string>();
-  for (const { members } of resolvedRecords) members.forEach(m => allSpecies.add(m.id));
+  // Regulações em que cada espécie aparece nos dados (cobre as que o dex não conhece: M-A, era SV).
+  const seenIn = new Map<string, Set<string>>();
+  const markSeen = (reg: string, sid: string) => {
+    allSpecies.add(sid);
+    let set = seenIn.get(reg);
+    if (!set) seenIn.set(reg, (set = new Set()));
+    set.add(sid);
+  };
+  for (const { r, members } of resolvedRecords) members.forEach(m => markSeen(r.regulation, m.id));
   for (const s of input.snapshots) for (const name of Object.keys(s.pokemon)) {
     const sp = resolveSpecies(name);
-    if (sp) allSpecies.add(sp.id);
+    if (sp) markSeen(s.regulation, sp.id);
   }
+  // O denominador do uso só inclui amostras de regulações em que a espécie podia ser usada:
+  // times da M-B (onde Rillaboom era ilegal) não dizem nada sobre o uso de Rillaboom.
+  const eligible = (sid: string, reg: string) => !!dexData.species[sid]?.legal[reg] || !!seenIn.get(reg)?.has(sid);
+  const eligibleByReg = new Map<string, string[]>();
+  const eligibleSpecies = (reg: string) => {
+    let list = eligibleByReg.get(reg);
+    if (!list) eligibleByReg.set(reg, (list = [...allSpecies].filter(sid => eligible(sid, reg))));
+    return list;
+  };
 
   const pair = new Map<string, { w: number; wins: number; games: number; n: number }>();
   const triple = new Map<string, { w: number; wins: number; games: number; n: number }>();
   let recTotalW = 0;
+  const recTotalByReg = new Map<string, number>();
 
   for (const { r, members } of resolvedRecords) {
     const base = decay(r.date, input.now, half) * regulationWeight(r.regulation, input.regulationOrder) * KIND_WEIGHT[r.sourceKind];
     if (base <= 1e-6) continue;
     recTotalW += base;
+    recTotalByReg.set(r.regulation, (recTotalByReg.get(r.regulation) ?? 0) + base);
     const ids = new Set(members.map(m => m.id));
     const games = (r.wins ?? 0) + (r.losses ?? 0);
-    // Denominador de uso por espécie (inclui equipes sem ela).
-    for (const sid of allSpecies) {
+    // Denominador de uso por espécie (inclui equipes sem ela, se ela era legal ali).
+    for (const sid of eligibleSpecies(r.regulation)) {
       const w = base * patchFactor(sid, r.date);
       const a = get(sid);
       a.recDen += w;
@@ -374,7 +398,7 @@ export function aggregate(input: AggregateInput): Meta {
       const sp = resolveSpecies(name);
       if (sp) present.set(sp.id, [...(present.get(sp.id) ?? []), name]);
     }
-    for (const sid of allSpecies) {
+    for (const sid of eligibleSpecies(s.regulation)) {
       const w = base * patchFactor(sid, s.date);
       const a = get(sid);
       a.snapDen += w;
@@ -403,7 +427,8 @@ export function aggregate(input: AggregateInput): Meta {
         // Smogon às vezes registra a Mega Stone só na forma Mega: garantimos o item.
         const items = megaItem && !Object.keys(e.items).some(k => toId(k) === toId(megaItem)) ? { ...e.items, [megaItem]: 1 } : e.items;
         addAll(a.snapSets.items, items, key => (dexData.items[toId(key)] ? toId(key) : undefined));
-        addAll(a.snapSets.abilities, e.abilities, key => (dexData.abilities[toId(key)] ? toId(key) : undefined));
+        // A entrada de uma Mega (Charizard-Mega-Y) traz a habilidade da Mega, não a da forma base.
+        if (!megaItem) addAll(a.snapSets.abilities, e.abilities, key => (dexData.abilities[toId(key)] ? toId(key) : undefined));
         addAll(a.snapSets.spreads, e.spreads, key => (parseSpreadKey(key) ? key : undefined));
         addAll(a.snapSets.mates, e.teammates, key => resolveSpecies(key)?.id);
       }
@@ -495,10 +520,16 @@ export function aggregate(input: AggregateInput): Meta {
   /* ------------------------------- cores ------------------------------- */
   const cores: MetaCore[] = [];
   const legalNow = (id: string) => !!pokemon[id];
+  // Fração dos times (das regulações em que todos os membros eram legais) que têm o core.
+  const coreShare = (w: number, members: string[]) => {
+    let den = 0;
+    for (const [reg, total] of recTotalByReg) if (members.every(id => eligible(id, reg))) den += total;
+    return den ? w / den : 0;
+  };
   for (const [key, p] of pair) {
     const members = key.split('|');
     if (p.n < 3 || !members.every(legalNow)) continue;
-    cores.push({ members, usage: recTotalW ? p.w / recTotalW : 0, winRate: p.games >= 5 ? shrinkWinRate(p.wins, p.games, k) : null, games: Math.round(p.games) });
+    cores.push({ members, usage: coreShare(p.w, members), winRate: p.games >= 5 ? shrinkWinRate(p.wins, p.games, k) : null, games: Math.round(p.games) });
   }
   // completa com pares do ladder quando há pouco dado de torneio
   if (cores.length < 30) {
@@ -516,7 +547,7 @@ export function aggregate(input: AggregateInput): Meta {
   for (const [key, t] of triple) {
     const members = key.split('|');
     if (t.n < 3 || !members.every(legalNow)) continue;
-    cores.push({ members, usage: recTotalW ? t.w / recTotalW : 0, winRate: t.games >= 5 ? shrinkWinRate(t.wins, t.games, k) : null, games: Math.round(t.games) });
+    cores.push({ members, usage: coreShare(t.w, members), winRate: t.games >= 5 ? shrinkWinRate(t.wins, t.games, k) : null, games: Math.round(t.games) });
   }
   cores.sort((a, b) => b.usage - a.usage);
 

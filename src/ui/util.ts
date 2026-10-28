@@ -81,7 +81,10 @@ export function formatDate(iso: string | undefined | null): string {
   if (!iso) return '—';
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  // "2026-10-26" (sem hora) é um dia do calendário: o JS lê como meia-noite UTC e,
+  // no fuso do Brasil (UTC−3), mostraria o dia anterior
+  const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(iso.trim());
+  return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', ...(dateOnly ? { timeZone: 'UTC' } : {}) });
 }
 
 /**

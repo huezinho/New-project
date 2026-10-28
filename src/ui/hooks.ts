@@ -11,12 +11,20 @@ export function useDebounced<T>(value: T, delay = 250): T {
   return debounced;
 }
 
+/** Aba do hash da URL; hash desconhecido ou malformado (ex.: "#%") volta para `fallback`. */
+export function tabFromHash<T extends string>(hash: string, tabs: readonly T[], fallback: T): T {
+  let h: string;
+  try {
+    h = decodeURIComponent(hash.replace(/^#/, ''));
+  } catch {
+    return fallback;
+  }
+  return (tabs as readonly string[]).includes(h) ? (h as T) : fallback;
+}
+
 /** Aba ativa sincronizada com o hash da URL (#equipe, #analise...). */
 export function useHashTab<T extends string>(tabs: readonly T[], fallback: T): [T, (tab: T) => void] {
-  const read = (): T => {
-    const h = decodeURIComponent(window.location.hash.replace(/^#/, '')) as T;
-    return tabs.includes(h) ? h : fallback;
-  };
+  const read = (): T => tabFromHash(window.location.hash, tabs, fallback);
   const [tab, setTab] = useState<T>(read);
   useEffect(() => {
     const onHash = () => setTab(read());

@@ -151,14 +151,15 @@ interface SplitIndex { info: ChaosFile['info']; pokemon: Record<string, { usage:
 
 export async function fetchSmogonMirrorSnapshots(
   formats: { id: string; regulation: string }[],
-  options: { months?: number; minUsage?: number; log?: (msg: string) => void } = {},
+  options: { months?: number; minUsage?: number; now?: Date; log?: (msg: string) => void } = {},
 ): Promise<UsageSnapshot[]> {
   const log = options.log ?? console.log;
-  // Meses recentes calculados a partir de hoje (dispensa a API do GitHub).
+  // Meses recentes calculados a partir de hoje (dispensa a API do GitHub). Os stats de um
+  // mês só saem depois que ele acaba, então a janela começa no mês anterior ao atual.
   const months: string[] = [];
-  const now = new Date();
+  const now = options.now ?? new Date();
   for (let i = (options.months ?? 3); i >= 1; i--) {
-    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i + 1, 1));
+    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
     months.push(d.toISOString().slice(0, 7));
   }
   const out: UsageSnapshot[] = [];
@@ -166,18 +167,24 @@ export async function fetchSmogonMirrorSnapshots(
     for (const f of formats) {
       for (const cutoff of [1760, 1630, 1500, 0]) {
         const base = `${RAW}/main/stats/${month}/${f.id}/${cutoff}`;
-        const index = await fetchJson<SplitIndex>(`${base}/_index.json`, { allow404: true, retries: 1 });
-        if (!index) continue;
-        const chaos: ChaosFile = { info: index.info, data: {} };
-        const names = Object.entries(index.pokemon).filter(([, v]) => v.usage >= (options.minUsage ?? 0.005)).map(([k]) => k);
-        for (const name of names) {
-          const text = await fetchText(`${base}/${encodeURIComponent(name)}.json`, { allow404: true, retries: 1, minIntervalMs: 100 });
-          if (text) chaos.data[name] = { ...JSON.parse(text), usage: index.pokemon[name].usage };
+        try {
+          const index = await fetchJson<SplitIndex>(`${base}/_index.json`, { allow404: true, retries: 1 });
+          if (!index) continue;
+          const chaos: ChaosFile = { info: index.info, data: {} };
+          const names = Object.entries(index.pokemon).filter(([, v]) => v.usage >= (options.minUsage ?? 0.005)).map(([k]) => k);
+          for (const name of names) {
+            const text = await fetchText(`${base}/${encodeURIComponent(name)}.json`, { allow404: true, retries: 1, minIntervalMs: 100 });
+            if (text) chaos.data[name] = { ...JSON.parse(text), usage: index.pokemon[name].usage };
+          }
+          const snap = chaosToSnapshot(chaos, { month, regulation: f.regulation, formatId: f.id, cutoff, url: `https://www.smogon.com/stats/${month}/chaos/${f.id}-${cutoff}.json` });
+          snap.label += ' (espelho MunchStats)';
+          log(`[smogon-espelho] ${month} ${f.id}-${cutoff}: ${snap.battles} batalhas, ${Object.keys(snap.pokemon).length} Pokémon`);
+          out.push(snap);
+        } catch (err) {
+          // Falha num mês/formato não derruba os demais; um snapshot incompleto não é usado
+          // (o seed do mesmo mês continua valendo).
+          log(`[smogon-espelho] falha em ${month} ${f.id}-${cutoff}: ${(err as Error).message}`);
         }
-        const snap = chaosToSnapshot(chaos, { month, regulation: f.regulation, formatId: f.id, cutoff, url: `https://www.smogon.com/stats/${month}/chaos/${f.id}-${cutoff}.json` });
-        snap.label += ' (espelho MunchStats)';
-        log(`[smogon-espelho] ${month} ${f.id}-${cutoff}: ${snap.battles} batalhas, ${Object.keys(snap.pokemon).length} Pokémon`);
-        out.push(snap);
         break;
       }
     }

@@ -32,6 +32,8 @@ export interface SpeciesData {
   legal: Record<string, boolean>;
   /** Golpes que pode aprender no Champions (ids). */
   learnset: string[];
+  /** Forma idêntica em batalha a outra espécie (só cosmética); fica fora do seletor. */
+  duplicateOf?: string;
 }
 
 export type MoveCategory = 'Physical' | 'Special' | 'Status';

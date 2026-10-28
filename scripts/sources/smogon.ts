@@ -29,7 +29,8 @@ export async function listMonths(): Promise<string[]> {
   if (!html) return [];
   const months = new Set<string>();
   for (const m of html.matchAll(/href="(\d{4}-\d{2}(?:-H[12])?)\/"/g)) months.add(m[1]);
-  return [...months].sort();
+  // Se existir o mês completo, ignora as quinzenas (H1/H2) do mesmo mês para não contar duas vezes.
+  return [...months].filter(m => !/-H[12]$/.test(m) || !months.has(m.slice(0, 7))).sort();
 }
 
 async function listChaosFiles(month: string): Promise<string[]> {

@@ -47,7 +47,7 @@ Opções de `update:meta`: `--months=6` (meses de Smogon stats), `--since=AAAA-M
 
 Se você tiver um clone local do Pokémon Showdown, use `SHOWDOWN_DIR=/caminho/pokemon-showdown npm run update:dex`. Atrás de proxy, rode com `NODE_USE_ENV_PROXY=1`.
 
-**Atualização automática:** o workflow `.github/workflows/update-data.yml` roda todo dia no GitHub Actions, regenera os dados e faz commit quando algo muda (nova regulação, patch, torneio ou mês de estatísticas). O `pages.yml` publica o app no GitHub Pages.
+**Atualização automática:** o workflow `.github/workflows/update-data.yml` roda todo dia no GitHub Actions, regenera os dados e faz commit do que mudou. O `dex.json` só muda com nova regulação, patch ou ajuste do Showdown; o `meta.json` é recalculado diariamente (novos torneios, novo mês de estatísticas e o próprio decaimento por data). Se smogon.com ou o Limitless estiverem fora do ar, o atualizador usa os espelhos no GitHub. O `pages.yml` publica o app no GitHub Pages.
 
 ### CLI
 
