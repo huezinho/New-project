@@ -122,6 +122,12 @@ export function metaFormShare(ctx: EngineContext, species: SpeciesData, item: It
 
 /** Forma do set é comum o bastante no meta para herdar golpes e spreads de lá. */
 export const META_FORM_MIN = 0.25;
+/**
+ * Abaixo destes jogos e uso a forma "praticamente não aparece" no meta: é um
+ * time só (golpes e parceiros a 100%), não uma amostra da forma.
+ */
+export const META_FORM_MIN_GAMES = 10;
+export const META_FORM_MIN_USAGE = 0.0005;
 
 /** Id da forma em batalha de uma espécie com um item (Mega quando é a Mega Stone dela). */
 export function battleFormId(ctx: EngineContext, species: SpeciesData, item: ItemData | undefined): string {
@@ -146,6 +152,7 @@ export function metaForForm(ctx: EngineContext, species: SpeciesData | undefined
       const f = mp.forms.find(x => x.id === formId);
       if (!f) return undefined;
       if (f.share >= 0.97) return mp; // a espécie é praticamente só esta forma
+      if (f.games < META_FORM_MIN_GAMES && f.usage < META_FORM_MIN_USAGE) return undefined;
       return {
         ...mp,
         usage: f.usage,

@@ -181,7 +181,7 @@ export interface MetaForm {
   items: Share[];
   abilities: Share[];
   spreads: SpreadShare[];
-  teammates?: (Share & { lift?: number })[];
+  teammates?: (Share & { lift?: number; winRate?: number | null; games?: number })[];
 }
 
 export interface MetaPokemon {

@@ -344,6 +344,8 @@ export function aggregate(input: AggregateInput): Meta {
   };
 
   const pair = new Map<string, { w: number; wins: number; games: number; n: number }>();
+  /** Duplas forma -> parceiro ("garchomp>charizard"), para jogos e vitória dos parceiros de cada forma. */
+  const formPair = new Map<string, { wins: number; games: number }>();
   const triple = new Map<string, { w: number; wins: number; games: number; n: number }>();
   let recTotalW = 0;
   const recTotalByReg = new Map<string, number>();
@@ -371,6 +373,16 @@ export function aggregate(input: AggregateInput): Meta {
       a.sources.add(r.eventName ?? r.source.split(':')[0]);
       addRecordMember(a, m, w, ids, r, games);
       addRecordMember(a.form(m.formId), m, w, ids, r, games);
+      if (games) {
+        for (const other of ids) {
+          if (other === m.id) continue;
+          const key = `${m.formId}>${other}`;
+          const fp = formPair.get(key) ?? { wins: 0, games: 0 };
+          fp.wins += base * (r.wins ?? 0);
+          fp.games += base * games;
+          formPair.set(key, fp);
+        }
+      }
       if (r.regulation === input.regulation) {
         if (isRecent(r.date)) a.recent.num += 1;
         else if (isPrevious(r.date)) a.previous.num += 1;
@@ -540,7 +552,10 @@ export function aggregate(input: AggregateInput): Meta {
           .filter((x): x is SpreadShare => !!x)
           .sort((x, y) => y.share - x.share)
           .slice(0, 4),
-        teammates: toShares(fMates.tally, fMates.total, dexData, 'species', 10),
+        teammates: toShares(fMates.tally, fMates.total, dexData, 'species', 10).map(t => {
+          const p = formPair.get(`${formId}>${t.id}`);
+          return { ...t, games: p ? Math.round(p.games) : 0, winRate: p && p.games >= 5 ? shrinkWinRate(p.wins, p.games, k) : null };
+        }),
       });
     }
     forms.sort((x, y) => y.share - x.share);

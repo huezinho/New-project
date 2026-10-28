@@ -202,9 +202,10 @@ function viability(share: number | undefined, hasData: boolean, neutral: number)
 /**
  * Potencial da espécie: papéis que ela pode cumprir pelo learnset e habilidades
  * (inclui as Megas). Com dados de meta, pondera pelo uso real de cada golpe.
+ * `withMega = false` ignora as habilidades das Megas (avaliação sem Mega Stone).
  */
-export function speciesPotential(ctx: EngineContext, species: SpeciesData): RoleMap {
-  return memo(ctx, `potential:${species.id}`, () => {
+export function speciesPotential(ctx: EngineContext, species: SpeciesData, withMega = true): RoleMap {
+  return memo(ctx, `potential:${species.id}:${withMega ? 1 : 0}`, () => {
     const out: RoleMap = new Map();
     const meta = metaOf(ctx, species);
     const moveShare = new Map((meta?.moves ?? []).map(m => [m.id, m.share]));
@@ -221,7 +222,7 @@ export function speciesPotential(ctx: EngineContext, species: SpeciesData): Role
       const v = viability(abilityShare.get(a.id), hasAbilities, 0.8);
       for (const e of rolesOfAbility(ctx, a.id)) add(out, e.role, a.name, e.quality * v);
     }
-    for (const { form } of megaOptions(ctx, species)) {
+    for (const { form } of withMega ? megaOptions(ctx, species) : []) {
       const ab = ctx.dex.ability(form.abilities['0']);
       if (!ab) continue;
       for (const e of rolesOfAbility(ctx, ab.id)) add(out, e.role, `${ab.name} (${form.name})`, e.quality * 0.7);

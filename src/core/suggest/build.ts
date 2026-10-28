@@ -10,7 +10,7 @@ import { emptySP, totalSP } from '../stats.ts';
 import { defaultAbility, defaultSpread, megaOptions, natureOf } from '../team.ts';
 import type { PokemonSet, StatsTable, Team } from '../types.ts';
 import { suggestAbilities } from './abilities.ts';
-import { bestItem } from './items.ts';
+import { bestItem, suggestItems } from './items.ts';
 import { rankMoves } from './moves.ts';
 import { suggestSpreads } from './spreads.ts';
 
@@ -22,6 +22,8 @@ export interface SetLocks {
   sp?: Partial<StatsTable>;
   /** Golpes já escolhidos: são mantidos e só os slots vazios são completados. */
   moves?: string[];
+  /** Sem Mega Stone: a sugestão foi avaliada na forma comum. */
+  noMega?: boolean;
 }
 
 /** Natureza compatível com SP já distribuídos: não reduz um atributo com investimento. */
@@ -65,7 +67,9 @@ export function buildSet(ctx: EngineContext, team: Team, speciesName: string, lo
 
   if (!locks.ability) draft.ability = suggestAbilities(ctx, teamOf(), slot)[0]?.ability ?? defaultAbility(ctx, species);
   const itemLocked = !!draft.item;
-  if (!itemLocked) draft.item = bestItem(ctx, teamOf(), slot);
+  const pickItem = () =>
+    locks.noMega ? suggestItems(ctx, teamOf(), slot).find(i => !i.blocked && !ctx.dex.item(i.item)?.megaStone)?.item : bestItem(ctx, teamOf(), slot);
+  if (!itemLocked) draft.item = pickItem();
   const pickMoves = (): string[] => {
     if (keep.length >= 4) return keep;
     const ids = new Set(keep.map(toId));
@@ -75,7 +79,7 @@ export function buildSet(ctx: EngineContext, team: Team, speciesName: string, lo
   draft.moves = pickMoves();
   if (!itemLocked) {
     // Com os golpes definidos o melhor item pode mudar (Light Clay, White Herb, Choice Scarf...).
-    const item = bestItem(ctx, teamOf(), slot);
+    const item = pickItem();
     if (item && item !== draft.item) {
       draft.item = item;
       draft.moves = pickMoves();

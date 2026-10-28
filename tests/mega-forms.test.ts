@@ -4,6 +4,7 @@ import { aggregate } from '../scripts/lib/aggregate.ts';
 import type { TeamRecord } from '../scripts/lib/records.ts';
 import { createEngineContext, rankPokemon, suggestMegaAlternatives, suggestPokemon } from '../src/core/engine.ts';
 import type { Heuristics } from '../src/core/api.ts';
+import { metaForForm } from '../src/core/team.ts';
 import type { Dex, PokemonSet } from '../src/core/types.ts';
 
 const dex = JSON.parse(readFileSync('public/data/dex.json', 'utf8')) as Dex;
@@ -78,5 +79,28 @@ describe('sugestões com as vagas de Mega ocupadas', () => {
     expect(alts.every(a => a.replaces.length === 2)).toBe(true);
     expect(alts.every(a => a.scoreWithoutMega === null || a.score > a.scoreWithoutMega)).toBe(true);
     expect(suggestMegaAlternatives(ctx, oneMega)).toEqual([]);
+  });
+});
+
+describe('forma vista em um time só', () => {
+  // Ex. real: Eelektross sem Mega com 2 jogos (golpes e parceiros a 100%) subia ao 5º lugar
+  // com "Parceiro frequente de Charizard-Mega-Y (lift 5,4×)" vindo de um único time.
+  const single = structuredClone(meta);
+  const plain = single.pokemon.salamence.forms!.find(f => !f.mega)!;
+  Object.assign(plain, { games: 2, usage: 0.0001, teammates: [{ id: 'charizard', name: 'Charizard', share: 1, lift: 5 }] });
+  const set = (species: string, item: string): PokemonSet => ({ species, item, sp: { hp: 2, atk: 0, def: 0, spa: 32, spd: 0, spe: 32 }, nature: 'Timid', moves: [] });
+  const twoMegas = [set('Charizard', 'Charizardite Y'), set('Floette-Eternal', 'Floettite')];
+
+  it('não vira dado do meta nem parceria frequente', () => {
+    const ctx = createEngineContext(dex, single, heuristics);
+    expect(metaForForm(ctx, ctx.dex.species('Salamence'), undefined)).toBeUndefined();
+    const s = rankPokemon(ctx, twoMegas).find(x => x.species === 'Salamence')!;
+    expect(s.meta).toBeUndefined();
+    expect(s.reasonsPt.some(r => r.startsWith('Parceiro frequente'))).toBe(false);
+  });
+
+  it('com vários times a forma comum continua valendo', () => {
+    const ctx = createEngineContext(dex, meta, heuristics);
+    expect(metaForForm(ctx, ctx.dex.species('Salamence'), undefined)?.formId).toBe('salamence');
   });
 });

@@ -12,7 +12,7 @@ import { matchTrait, roleById, setRoles, speciesPotential, type TraitSubject } f
 import { emptySP } from '../stats.ts';
 import {
   ABILITY_TERRAIN, ABILITY_WEATHER, attackTypesOf, baseAttack, defaultAbility, defaultSpread, defenseMult, hasMetaData, isDamaging,
-  isMegaStone, likelySet, megaOptions, megaShareOf, metaForForm, metaOf, moveTypeFor, NON_COVERAGE, ownField, resolveMember, type Member,
+  isMegaStone, likelySet, META_FORM_MIN, megaOptions, megaShareOf, metaForForm, metaOf, moveTypeFor, NON_COVERAGE, ownField, resolveMember, type Member,
 } from '../team.ts';
 import { attackEffectiveness, MOLD_BREAKERS, TYPES } from '../typechart.ts';
 import { clamp01, listPt, memo, num, pctPt } from '../util.ts';
@@ -71,7 +71,11 @@ function profileOf(ctx: EngineContext, species: SpeciesData, allowMega: boolean)
   return memo(ctx, `profile:${species.id}:${allowMega ? 1 : 0}`, () => {
     // Sem vaga de Mega, só contam os dados da forma comum: o uso de Salamence
     // vem quase todo da Mega e não diz nada sobre o Salamence sem Mega Stone.
-    const mp = allowMega || !megaOptions(ctx, species).length ? metaOf(ctx, species) : metaForForm(ctx, species, undefined);
+    const hasMega = megaOptions(ctx, species).length > 0;
+    let mp = allowMega || !hasMega ? metaOf(ctx, species) : metaForForm(ctx, species, undefined);
+    // Com vaga de Mega, uso, vitória, golpes e parceiros vêm da forma do set provável:
+    // Garchomp-Mega-Z não herda os parceiros do Garchomp comum (Charizard-Y).
+    if (allowMega && hasMega && mp?.forms?.length) mp = metaForForm(ctx, species, ctx.dex.item(likelySet(ctx, mp).item)) ?? mp;
     let set: PokemonSet;
     if (mp) {
       set = { ...likelySet(ctx, mp), moves: [...likelySet(ctx, mp).moves] };
@@ -125,7 +129,7 @@ function profileOf(ctx: EngineContext, species: SpeciesData, allowMega: boolean)
 /** Força estimada sem dados de meta (atributos, ataque e papéis). */
 function strengthOf(ctx: EngineContext, p: Profile): number {
   const form = p.member.form ?? p.species;
-  const potential = speciesPotential(ctx, p.species);
+  const potential = speciesPotential(ctx, p.species, p.usesMega);
   const roleSum = coreRoles(ctx).reduce((s, r) => s + r.weight * (potential.get(r.id)?.strength ?? 0), 0);
   return clamp01(0.55 * clamp01((p.bst - 420) / 200) + 0.25 * clamp01((baseAttack(form, p.member.ability) - 80) / 60) + 0.2 * clamp01(roleSum / 1.5));
 }
@@ -244,18 +248,20 @@ interface Env {
   defenses: Record<TypeName, number>[];
 }
 
-function scoreCandidate(env: Env, species: SpeciesData): Scored {
+/** `plainForm`: avalia a forma comum mesmo havendo vaga de Mega (pré-análise da forma em rankCandidates). */
+function scoreCandidate(env: Env, species: SpeciesData, plainForm = false): Scored {
   const { ctx, state, valid, weights } = env;
   // Sem meta, a 2ª Mega não é assumida: só uma Mega Evolui por batalha e o total base da Mega inflaria a nota.
-  const allowMega = env.forceMega || (env.hasMeta ? env.megaCount < 2 : env.megaCount === 0);
+  const allowMega = !plainForm && (env.forceMega || (env.hasMeta ? env.megaCount < 2 : env.megaCount === 0));
   const p = profileOf(ctx, species, allowMega);
   const reasons: Reason[] = [];
   const say = (text: string, salience: number, needs?: Reason['needs']) => reasons.push({ text, salience, needs });
   const values = {} as Record<keyof SuggestionWeights, number>;
-  const potential = speciesPotential(ctx, species);
+  // Sem Mega Stone, a habilidade da Mega não conta (Manectric comum não tem Intimidate).
+  const potential = speciesPotential(ctx, species, p.usesMega);
 
   // Sem vaga de Mega: deixa claro que a nota é da forma comum.
-  const megaShare = !allowMega ? megaShareOf(ctx, species) : 0;
+  const megaShare = !allowMega && !plainForm ? megaShareOf(ctx, species) : 0;
   if (megaShare >= 0.5) {
     const plain = p.meta?.usage ?? 0;
     say(
@@ -265,11 +271,19 @@ function scoreCandidate(env: Env, species: SpeciesData): Scored {
     );
   }
 
+  // Forma sem dados no meta (ex.: Mawile sem Mega): o uso dela é conhecido (praticamente zero) e os
+  // parceiros da espécie são os da outra forma; esta forma não aparece com ninguém.
+  const formWithoutData = !p.meta && !!metaOf(ctx, species);
+
   // meta
   if (env.hasMeta) {
     const u = p.meta?.usage ?? 0;
-    values.meta = p.meta ? clamp01(Math.sqrt(u / env.maxUsage)) : 0.12 * strengthOf(ctx, p);
-    if (u >= 0.04) say(`Muito usado no meta: ${pctPt(u, 1)} das equipes (${p.meta!.rank}º mais usado).`, weights.meta * values.meta);
+    values.meta = p.meta ? clamp01(Math.sqrt(u / env.maxUsage)) : formWithoutData ? 0 : 0.12 * strengthOf(ctx, p);
+    // A posição no ranking é da espécie: na visão de uma forma, cita só o uso dela.
+    const usedAs = p.meta?.formId ? ` ${p.usesMega ? `como ${p.member.formName}` : 'sem Mega'}` : '';
+    if (u >= 0.04) {
+      say(`Muito usado no meta${usedAs}: ${pctPt(u, 1)} das equipes${usedAs ? '' : ` (${p.meta!.rank}º mais usado)`}.`, weights.meta * values.meta);
+    }
   } else {
     values.meta = strengthOf(ctx, p);
     if (values.meta >= 0.6) say(`Atributos fortes (total base ${p.bst}${p.usesMega ? ', como Mega' : ''}).`, weights.meta * values.meta * 0.6);
@@ -299,7 +313,7 @@ function scoreCandidate(env: Env, species: SpeciesData): Scored {
     let bestPair: { m: Member; info: PairInfo; s: number } | null = null;
     const coversOf: string[] = [];
     for (const [i, m] of valid.entries()) {
-      const info = pairInfo(ctx, m.species!.id, species.id, p.meta?.formId ? p.meta : undefined);
+      const info = formWithoutData ? null : pairInfo(ctx, m.species!.id, species.id, p.meta?.formId ? p.meta : undefined);
       const ts = typeSynergy(env.defenses[i], p);
       if (ts.covers) coversOf.push(m.formName);
       let s: number;
@@ -308,7 +322,7 @@ function scoreCandidate(env: Env, species: SpeciesData): Scored {
         if (info.winRate != null && (info.games ?? 0) >= 20) s = clamp01(s + Math.max(-0.2, Math.min(0.2, (info.winRate - 0.5) * 2)));
         s = 0.75 * s + 0.25 * ts.value;
         if (!bestPair || s > bestPair.s) bestPair = { m, info, s };
-      } else if (env.hasMeta && m.meta?.teammates?.length && p.meta) {
+      } else if (env.hasMeta && (formWithoutData || (m.meta?.teammates?.length && p.meta))) {
         s = 0.7 * 0.42 + 0.3 * ts.value; // não é parceiro comum
       } else if (env.hasMeta) {
         s = 0.6 * 0.42 + 0.4 * ts.value; // sem evidência de parceria no meta
@@ -343,7 +357,8 @@ function scoreCandidate(env: Env, species: SpeciesData): Scored {
     if (bestPair?.info.lift && shrunkLift(bestPair.info) >= 1.25) {
       const w = bestPair.info.winRate;
       say(
-        `Parceiro frequente de ${bestPair.m.formName} (lift ${num(bestPair.info.lift, 1)}×${w != null && (bestPair.info.games ?? 0) >= 20 ? `, ${pctPt(w)} de vitórias` : ''}).`,
+        // Mostra o lift já encolhido pela amostra (o mesmo valor usado na nota).
+        `Parceiro frequente de ${bestPair.m.formName} (lift ${num(shrunkLift(bestPair.info), 1)}×${w != null && (bestPair.info.games ?? 0) >= 20 ? `, ${pctPt(w)} de vitórias` : ''}).`,
         weights.synergy * (bestPair.s - 0.4) * 2,
       );
     } else if (coversOf.length >= 2 && !env.hasMeta) {
@@ -496,6 +511,14 @@ function scoreCandidate(env: Env, species: SpeciesData): Scored {
 
   // Segunda Mega: só uma Mega Evolução por batalha.
   let factor = 1;
+  // Pouca evidência no meta: a nota vem só de tipos e papéis, não de resultados reais.
+  if (env.hasMeta) {
+    const u = p.meta?.usage ?? 0;
+    if (u < 0.002 && (p.meta?.games ?? 0) < 100) {
+      factor *= u < 0.0005 ? 0.88 : 0.94;
+      say(`Pouco usado no meta (${pctPt(u, 2)} das equipes): nota baseada em tipos e papéis, sem resultados que a confirmem.`, 0.12);
+    }
+  }
   if (p.usesMega && env.megaCount === 1 && !env.forceMega) {
     factor = 0.94;
     say('Seria a segunda Mega da equipe: só uma Mega Evolui por batalha.', 0.02);
@@ -532,9 +555,11 @@ export function suggestPokemon(ctx: EngineContext, team: Team, limit = 12): Poke
   const { list, toPublic } = rankCandidates(ctx, team ?? []);
   const taken = new Set((team ?? []).map(s => toId(s?.item)).filter(Boolean));
   return list.slice(0, n).map(entry => {
-    // A Mega assumida na nota vai no set (os motivos falam dela), salvo Item Clause.
+    // A Mega assumida na nota vai no set (os motivos falam dela), salvo Item Clause;
+    // avaliado na forma comum, o set também fica sem Mega Stone.
     const mega = entry.r.megaItem && !taken.has(toId(entry.r.megaItem)) ? entry.r.megaItem : undefined;
-    const set = buildSet(ctx, team ?? [], entry.r.species.name, mega ? { item: mega } : {});
+    const noMega = !entry.r.megaItem && hasMetaData(ctx) && megaOptions(ctx, entry.r.species).length > 0;
+    const set = buildSet(ctx, team ?? [], entry.r.species.name, mega ? { item: mega } : { noMega });
     return { ...toPublic(entry, set), set };
   });
 }
@@ -601,10 +626,24 @@ function rankCandidates(
   const candidates = ctx.dex.selectableSpecies().filter(s => !usedNums.has(s.num));
   const totalWeight = KEYS.reduce((s, k) => s + (active[k] ? weights[k] : 0), 0) || 1;
 
+  const total = (r: Scored) => (KEYS.reduce((s, k) => s + (active[k] ? weights[k] * r.values[k] : 0), 0) / totalWeight) * r.factor;
   const scored = candidates.map(species => {
-    const r = scoreCandidate(env, species);
-    const score = (KEYS.reduce((s, k) => s + (active[k] ? weights[k] * r.values[k] : 0), 0) / totalWeight) * r.factor;
-    return { r, score };
+    let r = scoreCandidate(env, species);
+    // Pré-análise da forma: com vaga de Mega, a forma comum também concorre e fica se render mais
+    // (ex.: Garchomp comum ao lado de Charizard-Y, em vez de um segundo Mega sem os mesmos parceiros).
+    // Só quando a forma comum é jogada de fato (amostra própria, não um punhado de times).
+    if (r.profile.usesMega && !env.forceMega && (metaForForm(ctx, species, undefined)?.formShare ?? 0) >= META_FORM_MIN) {
+      const plain = scoreCandidate(env, species, true);
+      if (total(plain) > total(r)) {
+        const share = plain.profile.meta?.formShare ?? 0;
+        plain.reasons.push({
+          text: `Sugerido sem Mega: nesta equipe rende mais que ${r.profile.member.formName} (${pctPt(share)} dos ${species.name} no meta jogam sem Mega).`,
+          salience: 0.12,
+        });
+        r = plain;
+      }
+    }
+    return { r, score: total(r) };
   });
   scored.sort((a, b) => b.score - a.score || (b.r.profile.meta?.usage ?? 0) - (a.r.profile.meta?.usage ?? 0));
 
@@ -641,7 +680,9 @@ export function suggestMegaAlternatives(ctx: EngineContext, team: Team, limit = 
   // Entraria no top 10 das sugestões e a Mega é o que faz a diferença (≥ 5% acima da forma comum).
   const cutoff = normal.list[Math.min(normal.list.length - 1, 9)]?.score ?? 0;
   const forced = rankCandidates(ctx, team ?? [], { forceMega: true });
-  const holders = normal.megaHolders.map(m => m.formName);
+  // Só quem de fato Mega Evolui pode ceder a vaga (Mega Stone de outra espécie não conta).
+  const holders = normal.megaHolders.filter(m => m.isMega).map(m => m.formName);
+  if (!holders.length) return [];
   return forced.list
     .filter(e => e.r.profile.usesMega && e.r.megaItem && e.score > cutoff && e.score > (normalScore.get(e.r.species.id) ?? 0) * 1.05)
     .slice(0, Math.max(1, Math.floor(limit) || 3))
